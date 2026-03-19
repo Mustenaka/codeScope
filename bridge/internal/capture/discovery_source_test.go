@@ -184,8 +184,11 @@ func TestProcessSnapshotAdapterEmitsSemanticDebugFields(t *testing.T) {
 	if commandPayload["debug_category"] != "process_observation" {
 		t.Fatalf("expected debug process_observation category, got %#v", commandPayload["debug_category"])
 	}
-	if commandPayload["thread_state"] != session.ThreadStateRunning {
-		t.Fatalf("expected running thread_state, got %#v", commandPayload["thread_state"])
+	if commandPayload["semantic_kind"] != "debug_event" {
+		t.Fatalf("expected debug semantic kind, got %#v", commandPayload["semantic_kind"])
+	}
+	if _, ok := commandPayload["thread_state"]; ok {
+		t.Fatalf("expected process observation to avoid release thread_state, got %#v", commandPayload["thread_state"])
 	}
 	if commandPayload["thread_id"] != "session-1" {
 		t.Fatalf("expected thread_id=session-1, got %#v", commandPayload["thread_id"])

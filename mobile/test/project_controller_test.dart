@@ -24,6 +24,7 @@ void main() {
           machineId: 'devbox',
           threadCount: 2,
           runningThreadCount: 1,
+          createdAt: DateTime.parse('2026-03-19T09:45:00Z'),
           lastActivityAt: DateTime.parse('2026-03-19T10:05:00Z'),
         ),
         ProjectRecord(
@@ -33,6 +34,7 @@ void main() {
           machineId: 'devbox',
           threadCount: 1,
           runningThreadCount: 0,
+          createdAt: DateTime.parse('2026-03-19T08:45:00Z'),
           lastActivityAt: DateTime.parse('2026-03-19T09:05:00Z'),
         ),
       ]),
@@ -67,6 +69,7 @@ void main() {
         machineId: 'devbox',
         threadCount: 2,
         runningThreadCount: 1,
+        createdAt: DateTime.parse('2026-03-19T09:45:00Z'),
         lastActivityAt: DateTime.parse('2026-03-19T10:06:00Z'),
       ),
     ];
@@ -109,12 +112,27 @@ class _FakeRestClient implements CodeScopeRestClient {
   }
 
   @override
+  Future<ThreadRecord> createProjectThread(String projectId, String content) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<ThreadRecord> fetchThreadDetail(String threadId) {
     throw UnimplementedError();
   }
 
   @override
   Future<List<ThreadMessageRecord>> fetchThreadMessages(String threadId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<List<PromptCommandTask>> fetchThreadCommands(String threadId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<PromptCommandTask> sendThreadPrompt(String threadId, String content) {
     throw UnimplementedError();
   }
 
@@ -149,8 +167,21 @@ class _FakeRestClient implements CodeScopeRestClient {
   }
 
   @override
+  Future<List<FileTreeNode>> fetchProjectFileTree(String projectId) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<FileContentRecord> fetchSessionFileContent(
     String sessionId,
+    String path,
+  ) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<FileContentRecord> fetchProjectFileContent(
+    String projectId,
     String path,
   ) {
     throw UnimplementedError();
@@ -167,6 +198,7 @@ class _MutableProjectRestClient extends _FakeRestClient {
             machineId: 'devbox',
             threadCount: 1,
             runningThreadCount: 1,
+            createdAt: DateTime.parse('2026-03-19T09:45:00Z'),
             lastActivityAt: DateTime.parse('2026-03-19T10:05:00Z'),
           ),
         ]);

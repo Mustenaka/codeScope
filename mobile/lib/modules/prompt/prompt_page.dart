@@ -8,11 +8,17 @@ import 'prompt_controller.dart';
 
 class PromptPage extends StatefulWidget {
   const PromptPage({
-    required this.sessionId,
+    this.sessionId,
+    this.threadId,
     super.key,
-  });
+  }) : assert(
+          (sessionId != null && sessionId != '') ||
+              (threadId != null && threadId != ''),
+          'PromptPage requires either sessionId or threadId.',
+        );
 
-  final String sessionId;
+  final String? sessionId;
+  final String? threadId;
 
   @override
   State<PromptPage> createState() => _PromptPageState();
@@ -27,6 +33,7 @@ class _PromptPageState extends State<PromptPage> {
     super.didChangeDependencies();
     _controller ??= PromptController(
       sessionId: widget.sessionId,
+      threadId: widget.threadId,
       restClient: AppScope.servicesOf(context).restClient,
       webSocketClient: AppScope.servicesOf(context).webSocketClient,
     )..load();
@@ -51,7 +58,9 @@ class _PromptPageState extends State<PromptPage> {
       builder: (BuildContext context, Widget? child) {
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Prompt'),
+            title: Text(
+              widget.threadId != null ? 'Continue Thread' : 'Send Prompt',
+            ),
             actions: const <Widget>[SettingsButton()],
           ),
           body: Column(
@@ -65,7 +74,9 @@ class _PromptPageState extends State<PromptPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          'Send prompt to current session',
+                          widget.threadId != null
+                              ? 'Send prompt to current thread'
+                              : 'Send prompt to current session',
                           style:
                               Theme.of(context).textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.w700,
@@ -87,7 +98,9 @@ class _PromptPageState extends State<PromptPage> {
                           children: <Widget>[
                             Expanded(
                               child: Text(
-                                'Session: ${widget.sessionId}',
+                                widget.threadId != null
+                                    ? 'Thread: ${widget.threadId}'
+                                    : 'Session: ${widget.sessionId}',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ),
@@ -228,9 +241,9 @@ class _PromptTaskCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Expanded(
-                  child: Text(
-                    task.prompt,
-                    style: theme.textTheme.titleSmall?.copyWith(
+                  child: _PromptPreview(
+                    prompt: task.prompt,
+                    textStyle: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -285,6 +298,74 @@ class _PromptTaskCard extends StatelessWidget {
     final minute = local.minute.toString().padLeft(2, '0');
     final second = local.second.toString().padLeft(2, '0');
     return '$hour:$minute:$second';
+  }
+}
+
+class _PromptPreview extends StatelessWidget {
+  const _PromptPreview({
+    required this.prompt,
+    this.textStyle,
+  });
+
+  final String prompt;
+  final TextStyle? textStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final shouldCollapse = prompt.length > 180 || '\n'.allMatches(prompt).length > 4;
+    if (!shouldCollapse) {
+      return Text(prompt, style: textStyle);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          prompt,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: textStyle,
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: () {
+            showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              builder: (BuildContext context) {
+                return DraggableScrollableSheet(
+                  expand: false,
+                  initialChildSize: 0.65,
+                  maxChildSize: 0.9,
+                  minChildSize: 0.45,
+                  builder: (BuildContext context, ScrollController controller) {
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Full Prompt',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 12),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              controller: controller,
+                              child: SelectableText(prompt),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            );
+          },
+          child: const Text('View Full Prompt'),
+        ),
+      ],
+    );
   }
 }
 

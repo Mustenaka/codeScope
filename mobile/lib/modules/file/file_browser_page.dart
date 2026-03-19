@@ -9,11 +9,17 @@ import 'file_tree_node.dart';
 
 class FileBrowserPage extends StatefulWidget {
   const FileBrowserPage({
-    required this.sessionId,
+    this.sessionId,
+    this.projectId,
     super.key,
-  });
+  }) : assert(
+          (sessionId != null && sessionId != '') ||
+              (projectId != null && projectId != ''),
+          'FileBrowserPage requires either sessionId or projectId.',
+        );
 
-  final String sessionId;
+  final String? sessionId;
+  final String? projectId;
 
   @override
   State<FileBrowserPage> createState() => _FileBrowserPageState();
@@ -28,6 +34,7 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
     _controller ??= FileBrowserController(
       restClient: AppScope.servicesOf(context).restClient,
       sessionId: widget.sessionId,
+      projectId: widget.projectId,
     )..load();
   }
 
@@ -69,6 +76,7 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
                                 height: constraints.maxHeight * 0.45,
                                 child: _FilePreviewPane(
                                   sessionId: widget.sessionId,
+                                  projectId: widget.projectId,
                                   content: controller.selectedContent,
                                 ),
                               ),
@@ -88,6 +96,7 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
                             Expanded(
                               child: _FilePreviewPane(
                                 sessionId: widget.sessionId,
+                                projectId: widget.projectId,
                                 content: controller.selectedContent,
                               ),
                             ),
@@ -175,10 +184,12 @@ class _FileNodeView extends StatelessWidget {
 class _FilePreviewPane extends StatelessWidget {
   const _FilePreviewPane({
     required this.sessionId,
+    required this.projectId,
     required this.content,
   });
 
-  final String sessionId;
+  final String? sessionId;
+  final String? projectId;
   final FileContentRecord? content;
 
   @override
@@ -204,7 +215,9 @@ class _FilePreviewPane extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text('Session: $sessionId'),
+                  Text(projectId != null
+                      ? 'Project: $projectId'
+                      : 'Session: $sessionId'),
                 ],
               )
             : Column(

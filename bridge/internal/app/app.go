@@ -70,15 +70,22 @@ func newCaptureSource(cfg config.Config, meta session.Metadata, logger *log.Logg
 			capture.NewSessionHeartbeatAdapter(cfg.SessionHeartbeatInterval),
 			capture.WorkspaceFileWatcherAdapter{},
 		)
-		codexRoot, err := resolveCodexRoot()
-		if err != nil {
+		adapters := make([]capture.SemanticAdapter, 0, 2)
+		if codexRoot, err := resolveCodexRoot(); err != nil {
 			logger.Printf("codex session capture disabled: %v", err)
+		} else {
+			adapters = append(adapters, capture.NewCodexSessionSource(codexRoot, cfg.MachineID, cfg.DiscoveryInterval, logger))
+		}
+		if claudeRoot, err := resolveClaudeRoot(); err != nil {
+			logger.Printf("claude session capture disabled: %v", err)
+		} else {
+			adapters = append(adapters, capture.NewClaudeSessionSource(claudeRoot, cfg.MachineID, cfg.DiscoveryInterval, logger))
+		}
+		if len(adapters) == 0 {
 			return discoverySource
 		}
-		return capture.NewMultiSource(
-			discoverySource,
-			capture.NewCodexSessionSource(codexRoot, cfg.MachineID, cfg.DiscoveryInterval, logger),
-		)
+		semanticSource := capture.NewSemanticCaptureSource(logger, adapters...)
+		return capture.NewMultiSource(discoverySource, semanticSource)
 	case "reader", "jsonl":
 		source, err := newInputSource(cfg, meta)
 		if err != nil {
@@ -111,6 +118,14 @@ func resolveCodexRoot() (string, error) {
 		return "", fmt.Errorf("resolve user home: %w", err)
 	}
 	return filepath.Join(homeDir, ".codex"), nil
+}
+
+func resolveClaudeRoot() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home: %w", err)
+	}
+	return filepath.Join(homeDir, ".claude"), nil
 }
 
 func newInputSource(cfg config.Config, meta session.Metadata) (capture.Source, error) {

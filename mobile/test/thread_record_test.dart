@@ -33,4 +33,34 @@ void main() {
       'Running. No readable message summary has been captured yet.',
     );
   });
+
+  test('displaySummary explains offline and stale threads explicitly', () {
+    final offline = ThreadRecord(
+      id: 'thread-offline-1',
+      projectId: 'project-1',
+      sessionId: 'session-1',
+      title: 'Offline thread',
+      status: ThreadStatus.offline,
+      lastActivityAt: DateTime.utc(2026, 3, 19, 10),
+      startedAt: DateTime.utc(2026, 3, 19, 9),
+    );
+    final stale = ThreadRecord(
+      id: 'thread-stale-1',
+      projectId: 'project-1',
+      sessionId: 'session-1',
+      title: 'Stale thread',
+      status: ThreadStatus.stale,
+      lastActivityAt: DateTime.utc(2026, 3, 19, 10),
+      startedAt: DateTime.utc(2026, 3, 19, 9),
+    );
+
+    expect(
+      offline.displaySummary,
+      'Offline. The last known thread state is preserved until the bridge reconnects.',
+    );
+    expect(
+      stale.displaySummary,
+      'Stale. The thread has gone quiet longer than the active window.',
+    );
+  });
 }

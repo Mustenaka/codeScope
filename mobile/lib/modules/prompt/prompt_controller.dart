@@ -3,18 +3,26 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../log/log_event.dart';
+import '../thread/thread_record.dart';
 import '../../services/rest_client.dart';
+import '../../services/real/server_error_presenter.dart';
 import '../../services/websocket_client.dart';
 import 'prompt_command_task.dart';
 
 class PromptController extends ChangeNotifier {
   PromptController({
-    required this.sessionId,
+    this.sessionId,
+    this.threadId,
     required this.restClient,
     required this.webSocketClient,
-  });
+  }) : assert(
+          (sessionId != null && sessionId != '') ||
+              (threadId != null && threadId != ''),
+          'PromptController requires either sessionId or threadId.',
+        );
 
-  final String sessionId;
+  final String? sessionId;
+  final String? threadId;
   final CodeScopeRestClient restClient;
   final CodeScopeWebSocketClient webSocketClient;
 
@@ -23,6 +31,7 @@ class PromptController extends ChangeNotifier {
   String? _errorMessage;
   List<PromptCommandTask> _tasks = const <PromptCommandTask>[];
   List<LogEvent> _events = const <LogEvent>[];
+  ThreadRecord? _thread;
   StreamSubscription<LogEvent>? _subscription;
 
   bool get isLoading => _loading;
@@ -39,14 +48,17 @@ class PromptController extends ChangeNotifier {
     await _subscription?.cancel();
 
     try {
-      final tasks = await restClient.fetchSessionCommands(sessionId);
-      final events = await restClient.fetchSessionEvents(sessionId);
+      final resolvedSessionID = await _resolveSessionID();
+      final tasks = threadId != null
+          ? await restClient.fetchThreadCommands(threadId!)
+          : await restClient.fetchSessionCommands(resolvedSessionID);
+      final events = await restClient.fetchSessionEvents(resolvedSessionID);
       _tasks = tasks
         ..sort((PromptCommandTask left, PromptCommandTask right) {
           return right.createdAt.compareTo(left.createdAt);
         });
       _events = events;
-      _subscription = webSocketClient.subscribeToSession(sessionId).listen(
+      _subscription = webSocketClient.subscribeToSession(resolvedSessionID).listen(
         _handleLiveEvent,
         onError: (Object error) {
           _errorMessage = error.toString();
@@ -54,7 +66,7 @@ class PromptController extends ChangeNotifier {
         },
       );
     } catch (error) {
-      _errorMessage = error.toString();
+      _errorMessage = presentServerError(error);
     } finally {
       _loading = false;
       notifyListeners();
@@ -72,14 +84,28 @@ class PromptController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final task = await restClient.sendPrompt(sessionId, trimmed);
+      final task = threadId != null
+          ? await restClient.sendThreadPrompt(threadId!, trimmed)
+          : await restClient.sendPrompt(sessionId!, trimmed);
       _tasks = <PromptCommandTask>[task, ..._tasks];
     } catch (error) {
-      _errorMessage = error.toString();
+      _errorMessage = presentServerError(error);
     } finally {
       _sending = false;
       notifyListeners();
     }
+  }
+
+  Future<String> _resolveSessionID() async {
+    if (sessionId != null && sessionId!.isNotEmpty) {
+      return sessionId!;
+    }
+    if (_thread != null) {
+      return _thread!.sessionId;
+    }
+    final detail = await restClient.fetchThreadDetail(threadId!);
+    _thread = detail;
+    return detail.sessionId;
   }
 
   void _handleLiveEvent(LogEvent event) {

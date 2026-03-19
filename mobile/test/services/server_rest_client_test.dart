@@ -26,7 +26,7 @@ void main() {
     });
 
     test(
-        'fetches sessions, session detail, events, files, and commands from server JSON',
+        'fetches sessions, thread/project release routes, legacy files, and commands from server JSON',
         () async {
       server.listen((HttpRequest request) async {
         if (request.uri.path == '/api/sessions') {
@@ -160,6 +160,7 @@ void main() {
               'machine_id': 'devbox',
               'thread_count': 2,
               'running_thread_count': 1,
+              'created_at': '2026-03-19T09:30:00Z',
               'last_activity_at': '2026-03-19T10:05:00Z',
             },
           ]);
@@ -174,12 +175,33 @@ void main() {
             'machine_id': 'devbox',
             'thread_count': 2,
             'running_thread_count': 1,
+            'created_at': '2026-03-19T09:30:00Z',
             'last_activity_at': '2026-03-19T10:05:00Z',
           });
           return;
         }
 
         if (request.uri.path == '/api/projects/project-001/threads') {
+          if (request.method == 'POST') {
+            final body = await utf8.decoder.bind(request).join();
+            expect(body, contains('start a formal project thread'));
+            _writeJson(
+              request.response,
+              <String, Object?>{
+                'id': 'thread-created-001',
+                'project_id': 'project-001',
+                'session_id': 'session-001',
+                'title': 'start a formal project thread',
+                'agent_kind': 'codex',
+                'status': 'running',
+                'summary': 'start a formal project thread',
+                'last_activity_at': '2026-03-19T10:08:00Z',
+                'started_at': '2026-03-19T10:08:00Z',
+              },
+              statusCode: HttpStatus.created,
+            );
+            return;
+          }
           _writeJson(request.response, <Map<String, Object?>>[
             <String, Object?>{
               'id': 'session-001',
@@ -230,8 +252,81 @@ void main() {
               'created_at': '2026-03-19T10:05:00Z',
               'sequence': 2,
               'source_type': 'ai_output',
+              'agent_kind': 'codex',
             },
           ]);
+          return;
+        }
+
+        if (request.uri.path == '/api/threads/session-001/commands' &&
+            request.method == 'GET') {
+          _writeJson(request.response, <Map<String, Object?>>[
+            <String, Object?>{
+              'id': 'cmd-003',
+              'session_id': 'session-001',
+              'task_type': 'send_prompt',
+              'payload': <String, Object?>{
+                'content': 'continue from thread route',
+              },
+              'status': 'running',
+              'result': '',
+              'created_at': '2026-03-19T10:06:00Z',
+              'updated_at': '2026-03-19T10:06:30Z',
+            },
+          ]);
+          return;
+        }
+
+        if (request.uri.path == '/api/threads/session-001/commands/prompt' &&
+            request.method == 'POST') {
+          final body = await utf8.decoder.bind(request).join();
+          expect(body, contains('continue from thread route'));
+          _writeJson(
+              request.response,
+              <String, Object?>{
+                'id': 'cmd-004',
+                'session_id': 'session-001',
+                'task_type': 'send_prompt',
+                'payload': <String, Object?>{
+                  'content': 'continue from thread route',
+                },
+                'status': 'running',
+                'result': '',
+                'created_at': '2026-03-19T10:07:00Z',
+                'updated_at': '2026-03-19T10:07:00Z',
+              },
+              statusCode: HttpStatus.created);
+          return;
+        }
+
+        if (request.uri.path == '/api/projects/project-001/files/tree') {
+          _writeJson(request.response, <Map<String, Object?>>[
+            <String, Object?>{
+              'name': 'server',
+              'path': 'server',
+              'type': 'directory',
+              'children': <Map<String, Object?>>[
+                <String, Object?>{
+                  'name': 'go.mod',
+                  'path': 'server/go.mod',
+                  'type': 'file',
+                  'size': 128,
+                  'previewable': true,
+                },
+              ],
+            },
+          ]);
+          return;
+        }
+
+        if (request.uri.path == '/api/projects/project-001/files/content') {
+          _writeJson(request.response, <String, Object?>{
+            'path': request.uri.queryParameters['path'],
+            'size': 128,
+            'previewable': true,
+            'language': 'mod',
+            'content': 'module codescope/server',
+          });
           return;
         }
 
@@ -255,8 +350,22 @@ void main() {
       final projects = await client.fetchProjects();
       final project = await client.fetchProjectDetail('project-001');
       final threads = await client.fetchProjectThreads('project-001');
+      final createdProjectThread = await client.createProjectThread(
+        'project-001',
+        'start a formal project thread',
+      );
       final thread = await client.fetchThreadDetail('session-001');
       final messages = await client.fetchThreadMessages('session-001');
+      final threadCommands = await client.fetchThreadCommands('session-001');
+      final createdThreadPrompt = await client.sendThreadPrompt(
+        'session-001',
+        'continue from thread route',
+      );
+      final projectTree = await client.fetchProjectFileTree('project-001');
+      final projectContent = await client.fetchProjectFileContent(
+        'project-001',
+        'server/go.mod',
+      );
 
       expect(sessions, hasLength(1));
       expect(sessions.single.projectName, 'codeScope/mobile');
@@ -275,9 +384,14 @@ void main() {
       expect(projects.single.name, 'codeScope');
       expect(project.threadCount, 2);
       expect(threads.single.status, ThreadStatus.running);
+      expect(createdProjectThread.id, 'thread-created-001');
       expect(thread.id, 'session-001');
       expect(messages, hasLength(2));
       expect(messages.last.role, ThreadMessageRole.assistant);
+      expect(threadCommands.single.id, 'cmd-003');
+      expect(createdThreadPrompt.id, 'cmd-004');
+      expect(projectTree.single.children.single.path, 'server/go.mod');
+      expect(projectContent.path, 'server/go.mod');
     });
 
     test('throws a readable error when server returns a failure response',

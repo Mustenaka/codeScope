@@ -26,6 +26,10 @@ type CodexSessionSource struct {
 	titles       map[string]string
 }
 
+func (s *CodexSessionSource) Name() string {
+	return "codex_session_file"
+}
+
 type codexSessionFileState struct {
 	offset      int64
 	meta        session.Metadata
@@ -298,7 +302,8 @@ func (s *CodexSessionSource) handleLine(ctx context.Context, state *codexSession
 			"content":           content,
 			"role":              role,
 			"source":            "codex_session_file",
-			"thread_state":      session.ThreadStateRunning,
+			"semantic_kind":     "thread_message",
+			"thread_state":      codexThreadState(role),
 			"thread_id":         state.threadID,
 			"source_session_id": state.meta.SessionID,
 		}
@@ -311,17 +316,31 @@ func (s *CodexSessionSource) handleLine(ctx context.Context, state *codexSession
 			Event: session.Event{
 				Type: eventType,
 				Payload: map[string]any{
-					"content":      payloadMap["content"],
-					"role":         payloadMap["role"],
-					"source":       payloadMap["source"],
-					"thread_state": payloadMap["thread_state"],
-					"thread_title": payloadMap["thread_title"],
-					"timestamp":    eventTime.UTC().Format(time.RFC3339Nano),
+					"content":           payloadMap["content"],
+					"role":              payloadMap["role"],
+					"source":            payloadMap["source"],
+					"semantic_kind":     payloadMap["semantic_kind"],
+					"thread_state":      payloadMap["thread_state"],
+					"thread_id":         payloadMap["thread_id"],
+					"source_session_id": payloadMap["source_session_id"],
+					"thread_title":      payloadMap["thread_title"],
+					"timestamp":         eventTime.UTC().Format(time.RFC3339Nano),
 				},
 			},
 		})
 	default:
 		return nil
+	}
+}
+
+func codexThreadState(role string) string {
+	switch strings.TrimSpace(role) {
+	case "assistant":
+		// Session-file assistant turns are observed after the turn is fully emitted,
+		// so the most useful default hint is that the thread is ready for the next prompt.
+		return session.ThreadStateWaitingPrompt
+	default:
+		return session.ThreadStateRunning
 	}
 }
 

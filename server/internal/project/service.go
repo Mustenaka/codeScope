@@ -14,6 +14,7 @@ import (
 )
 
 var ErrNotFound = errors.New("project resource not found")
+var ErrNoWritableSession = errors.New("project has no writable bridge session")
 
 type SessionReader interface {
 	List() ([]session.Session, error)
@@ -31,6 +32,8 @@ const (
 	ThreadStateWaitingReview ThreadState = "waiting_review"
 	ThreadStateCompleted     ThreadState = "completed"
 	ThreadStateBlocked       ThreadState = "blocked"
+	ThreadStateOffline       ThreadState = "offline"
+	ThreadStateStale         ThreadState = "stale"
 )
 
 type Role string
@@ -48,6 +51,7 @@ type Project struct {
 	MachineID          string    `json:"machine_id"`
 	ThreadCount        int       `json:"thread_count"`
 	RunningThreadCount int       `json:"running_thread_count"`
+	CreatedAt          time.Time `json:"created_at,omitempty"`
 	LastActivityAt     time.Time `json:"last_activity_at,omitempty"`
 }
 
@@ -71,12 +75,14 @@ type Message struct {
 	Content    string    `json:"content"`
 	CreatedAt  time.Time `json:"created_at"`
 	Sequence   int       `json:"sequence"`
+	AgentKind  string    `json:"agent_kind,omitempty"`
 	SourceType string    `json:"source_type,omitempty"`
 }
 
 type Service struct {
 	sessions SessionReader
 	events   EventReader
+	now      func() time.Time
 }
 
 const activeThreadWindow = 20 * time.Minute
@@ -95,10 +101,26 @@ type threadSnapshot struct {
 	endedAt        time.Time
 }
 
+type CreateThreadInput struct {
+	Content string `json:"content" binding:"required"`
+}
+
+type ThreadLaunch struct {
+	Thread           Thread `json:"thread"`
+	BackingSessionID string `json:"backing_session_id"`
+}
+
+type ThreadExecution struct {
+	Thread            Thread   `json:"thread"`
+	WritableSessionID string   `json:"writable_session_id"`
+	SessionIDs        []string `json:"session_ids"`
+}
+
 func NewService(sessions SessionReader, events EventReader) *Service {
 	return &Service{
 		sessions: sessions,
 		events:   events,
+		now:      time.Now().UTC,
 	}
 }
 
@@ -131,6 +153,7 @@ func (s *Service) ListProjects() ([]Project, error) {
 				Name:          firstNonEmpty(item.ProjectName, baseName(item.WorkspaceRoot), item.ID),
 				WorkspaceRoot: item.WorkspaceRoot,
 				MachineID:     item.MachineID,
+				CreatedAt:     item.CreatedAt,
 				LastActivityAt: latestTime(
 					item.LastActivityAt,
 					item.UpdatedAt,
@@ -144,6 +167,9 @@ func (s *Service) ListProjects() ([]Project, error) {
 			if item.ProjectName != "" {
 				current.Name = item.ProjectName
 			}
+		}
+		if current.CreatedAt.IsZero() || (!item.CreatedAt.IsZero() && item.CreatedAt.Before(current.CreatedAt)) {
+			current.CreatedAt = item.CreatedAt
 		}
 	}
 	for projectID, threads := range threadsByProject {
@@ -252,6 +278,9 @@ func (s *Service) ListMessages(threadID string) ([]Message, error) {
 			if !ok {
 				continue
 			}
+			if message.AgentKind == "" && message.Role == RoleAssistant {
+				message.AgentKind = firstNonEmpty(payloadAgentKind(record.Payload), thread.AgentKind)
+			}
 			messages = append(messages, message)
 		}
 	}
@@ -268,6 +297,127 @@ func (s *Service) ListMessages(threadID string) ([]Message, error) {
 	return messages, nil
 }
 
+func (s *Service) PrepareThreadLaunch(projectID string, input CreateThreadInput) (ThreadLaunch, error) {
+	content := strings.TrimSpace(input.Content)
+	if content == "" {
+		return ThreadLaunch{}, errors.New("content is required")
+	}
+
+	sessions, err := s.sessions.List()
+	if err != nil {
+		return ThreadLaunch{}, fmt.Errorf("list sessions: %w", err)
+	}
+
+	projectFound := false
+	var selected *session.Session
+	for i := range sessions {
+		item := sessions[i]
+		if ProjectID(item) != projectID {
+			continue
+		}
+		projectFound = true
+		if !item.BridgeOnline {
+			continue
+		}
+		if selected == nil || betterWritableSession(item, *selected) {
+			candidate := item
+			selected = &candidate
+		}
+	}
+	if !projectFound {
+		return ThreadLaunch{}, ErrNotFound
+	}
+	if selected == nil {
+		return ThreadLaunch{}, ErrNoWritableSession
+	}
+
+	now := s.now()
+	title := clampTitle(content)
+	threadID := newThreadID(projectID, selected.ID, content, now)
+	thread := Thread{
+		ID:             threadID,
+		ProjectID:      projectID,
+		SessionID:      selected.ID,
+		Title:          title,
+		Status:         ThreadStateRunning,
+		Summary:        content,
+		LastActivityAt: now,
+		StartedAt:      now,
+	}
+	return ThreadLaunch{
+		Thread:           thread,
+		BackingSessionID: selected.ID,
+	}, nil
+}
+
+func (s *Service) ResolveThreadExecution(threadID string) (ThreadExecution, error) {
+	sessions, err := s.sessions.List()
+	if err != nil {
+		return ThreadExecution{}, fmt.Errorf("list sessions: %w", err)
+	}
+
+	snapshots := make([]threadSnapshot, 0, len(sessions))
+	for _, item := range sessions {
+		records, listErr := s.events.ListBySession(item.ID)
+		if listErr != nil {
+			return ThreadExecution{}, fmt.Errorf("list events for session %s: %w", item.ID, listErr)
+		}
+		snapshot := buildThreadSnapshot(item, records, s.now())
+		if snapshot.threadID != threadID {
+			continue
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	if len(snapshots) == 0 {
+		return ThreadExecution{}, ErrNotFound
+	}
+
+	sort.Slice(snapshots, func(i, j int) bool {
+		if snapshots[i].lastActivityAt.Equal(snapshots[j].lastActivityAt) {
+			return snapshots[i].session.ID < snapshots[j].session.ID
+		}
+		return snapshots[i].lastActivityAt.After(snapshots[j].lastActivityAt)
+	})
+
+	thread := Thread{
+		ID:             threadID,
+		ProjectID:      snapshots[0].projectID,
+		SessionID:      snapshots[0].session.ID,
+		Title:          snapshots[0].title,
+		AgentKind:      snapshots[0].agentKind,
+		Status:         snapshots[0].status,
+		Summary:        snapshots[0].summary,
+		LastActivityAt: snapshots[0].lastActivityAt,
+		StartedAt:      snapshots[0].startedAt,
+		EndedAt:        snapshots[0].endedAt,
+	}
+
+	sessionIDs := make([]string, 0, len(snapshots))
+	var writable *session.Session
+	for _, snapshot := range snapshots {
+		sessionIDs = append(sessionIDs, snapshot.session.ID)
+		if !snapshot.session.BridgeOnline {
+			continue
+		}
+		if writable == nil || betterWritableSession(snapshot.session, *writable) {
+			candidate := snapshot.session
+			writable = &candidate
+		}
+	}
+	if writable == nil {
+		return ThreadExecution{
+			Thread:     thread,
+			SessionIDs: sessionIDs,
+		}, ErrNoWritableSession
+	}
+
+	return ThreadExecution{
+		Thread:            thread,
+		WritableSessionID: writable.ID,
+		SessionIDs:        sessionIDs,
+	}, nil
+}
+
 func (s *Service) collectVisibleThreads(sessions []session.Session) (map[string][]Thread, error) {
 	snapshots := make([]threadSnapshot, 0, len(sessions))
 	for _, item := range sessions {
@@ -275,7 +425,7 @@ func (s *Service) collectVisibleThreads(sessions []session.Session) (map[string]
 		if err != nil {
 			return nil, fmt.Errorf("list events for session %s: %w", item.ID, err)
 		}
-		snapshot := buildThreadSnapshot(item, records)
+		snapshot := buildThreadSnapshot(item, records, s.now())
 		if !isReleaseVisibleSnapshot(snapshot) {
 			continue
 		}
@@ -340,7 +490,7 @@ func (s *Service) collectVisibleThreads(sessions []session.Session) (map[string]
 	return result, nil
 }
 
-func buildThreadSnapshot(item session.Session, records []event.Record) threadSnapshot {
+func buildThreadSnapshot(item session.Session, records []event.Record, now time.Time) threadSnapshot {
 	return threadSnapshot{
 		session:        item,
 		records:        records,
@@ -348,12 +498,24 @@ func buildThreadSnapshot(item session.Session, records []event.Record) threadSna
 		threadID:       deriveThreadID(item, records),
 		title:          buildThreadTitle(item, records),
 		agentKind:      deriveAgentKind(records),
-		status:         deriveThreadState(item, records),
+		status:         deriveThreadState(item, records, now),
 		summary:        deriveSummary(records),
 		lastActivityAt: latestTime(item.LastActivityAt, item.UpdatedAt, item.CreatedAt),
 		startedAt:      item.StartedAt,
 		endedAt:        item.EndedAt,
 	}
+}
+
+func betterWritableSession(candidate, current session.Session) bool {
+	candidateConnectedAt := latestTime(candidate.BridgeConnectedAt, candidate.LastActivityAt, candidate.UpdatedAt, candidate.CreatedAt)
+	currentConnectedAt := latestTime(current.BridgeConnectedAt, current.LastActivityAt, current.UpdatedAt, current.CreatedAt)
+	if !candidateConnectedAt.Equal(currentConnectedAt) {
+		return candidateConnectedAt.After(currentConnectedAt)
+	}
+	if candidate.BridgeOnline != current.BridgeOnline {
+		return candidate.BridgeOnline
+	}
+	return candidate.ID > current.ID
 }
 
 func isReleaseVisibleSnapshot(snapshot threadSnapshot) bool {
@@ -426,12 +588,46 @@ func deriveAgentKind(records []event.Record) string {
 }
 
 func deriveThreadID(item session.Session, records []event.Record) string {
+	var fallback string
 	for i := len(records) - 1; i >= 0; i-- {
-		if value, ok := payloadString(records[i].Payload, "thread_id"); ok {
+		if value, ok := semanticThreadID(records[i], item.ID); ok {
 			return value
 		}
+		if fallback == "" {
+			if value, ok := payloadString(records[i].Payload, "thread_id"); ok {
+				fallback = value
+			}
+		}
+	}
+	if strings.TrimSpace(fallback) != "" {
+		return fallback
 	}
 	return ThreadID(item)
+}
+
+func semanticThreadID(record event.Record, sessionID string) (string, bool) {
+	threadID, ok := payloadString(record.Payload, "thread_id")
+	if !ok {
+		return "", false
+	}
+	if !isSessionFallbackThreadID(threadID, record.Payload, sessionID) {
+		return threadID, true
+	}
+	return "", false
+}
+
+func isSessionFallbackThreadID(threadID string, payload map[string]any, sessionID string) bool {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return true
+	}
+	if threadID == strings.TrimSpace(sessionID) {
+		return true
+	}
+	if sourceSessionID, ok := payloadString(payload, "source_session_id"); ok && threadID == sourceSessionID {
+		return true
+	}
+	return false
 }
 
 func deriveSummary(records []event.Record) string {
@@ -493,6 +689,11 @@ func fallbackThreadTitle(item session.Session) string {
 	return "Thread " + suffix
 }
 
+func newThreadID(projectID, sessionID, content string, now time.Time) string {
+	sum := sha1.Sum([]byte(projectID + "|" + sessionID + "|" + content + "|" + now.UTC().Format(time.RFC3339Nano)))
+	return "thread-" + hex.EncodeToString(sum[:8])
+}
+
 func assistantSummary(record event.Record) (string, bool) {
 	switch {
 	case record.MessageType == event.MessageTypeEvent && record.EventType == event.TypeAIOutput:
@@ -529,34 +730,62 @@ func commandResultSummary(record event.Record) (string, bool) {
 	return payloadString(record.Payload, "error")
 }
 
-func deriveThreadState(item session.Session, records []event.Record) ThreadState {
-	now := time.Now().UTC()
+func deriveThreadState(item session.Session, records []event.Record, now time.Time) ThreadState {
+	now = now.UTC()
+	base, ok := latestLifecycleState(records)
+	if !ok {
+		base = fallbackThreadState(item)
+	}
+	return applyThreadStateOverlays(base, item, records, now)
+}
+
+func latestLifecycleState(records []event.Record) (ThreadState, bool) {
 	for i := len(records) - 1; i >= 0; i-- {
 		record := records[i]
-		if value, ok := payloadString(record.Payload, "thread_state"); ok {
-			switch value {
-			case string(ThreadStateRunning):
-				return ThreadStateRunning
-			case string(ThreadStateWaitingPrompt):
-				return ThreadStateWaitingPrompt
-			case string(ThreadStateWaitingReview):
-				return ThreadStateWaitingReview
-			case string(ThreadStateCompleted):
-				return ThreadStateCompleted
-			case string(ThreadStateBlocked):
-				return ThreadStateBlocked
-			}
+		if state, ok := explicitThreadStateForRecord(record); ok {
+			return state, true
 		}
-		if record.EventType == event.TypeError {
-			return ThreadStateBlocked
-		}
-		if record.MessageType == event.MessageTypeCommandResult &&
-			record.CommandType == event.CommandTypeSendPrompt &&
-			record.Status == event.CommandStatusFailed {
-			return ThreadStateWaitingPrompt
+		if state, ok := lifecycleThreadState(record); ok {
+			return state, true
 		}
 	}
+	return "", false
+}
 
+func explicitThreadStateForRecord(record event.Record) (ThreadState, bool) {
+	state, ok := explicitThreadState(record.Payload)
+	if !ok {
+		return "", false
+	}
+	if !isAuthoritativeThreadStateRecord(record, state) {
+		return "", false
+	}
+	return state, true
+}
+
+func isAuthoritativeThreadStateRecord(record event.Record, state ThreadState) bool {
+	if record.MessageType == event.MessageTypeHeartbeat {
+		return false
+	}
+	if semanticKind, _ := record.Payload["semantic_kind"].(string); strings.TrimSpace(semanticKind) == "debug_event" {
+		return false
+	}
+	if observed, _ := record.Payload["observed"].(bool); observed {
+		return false
+	}
+	if state == ThreadStateRunning {
+		switch {
+		case record.MessageType == event.MessageTypeCommandResult:
+			return false
+		case record.MessageType == event.MessageTypeEvent &&
+			record.EventType == event.TypeTerminalOutput:
+			return false
+		}
+	}
+	return true
+}
+
+func fallbackThreadState(item session.Session) ThreadState {
 	switch item.Status {
 	case session.StatusFailed:
 		return ThreadStateBlocked
@@ -565,13 +794,103 @@ func deriveThreadState(item session.Session, records []event.Record) ThreadState
 	case session.StatusCreated:
 		return ThreadStateWaitingPrompt
 	default:
-		if activity := latestTime(item.LastActivityAt, item.UpdatedAt, item.CreatedAt); !activity.IsZero() && now.Sub(activity) > activeThreadWindow {
-			if hasReadableMessages(records) {
-				return ThreadStateWaitingPrompt
-			}
-			return ThreadStateCompleted
-		}
 		return ThreadStateRunning
+	}
+}
+
+func applyThreadStateOverlays(base ThreadState, item session.Session, records []event.Record, now time.Time) ThreadState {
+	if isTerminalThreadState(base) {
+		return base
+	}
+	if bridgeConnectivityKnown(item) && !item.BridgeOnline {
+		return ThreadStateOffline
+	}
+	if base == ThreadStateRunning {
+		activity := latestTime(item.LastActivityAt, item.UpdatedAt, item.CreatedAt, latestRecordTime(records))
+		if !activity.IsZero() && now.Sub(activity) > activeThreadWindow {
+			return ThreadStateStale
+		}
+	}
+	return base
+}
+
+func bridgeConnectivityKnown(item session.Session) bool {
+	return item.BridgeOnline || !item.BridgeConnectedAt.IsZero() || !item.BridgeDisconnectedAt.IsZero()
+}
+
+func isTerminalThreadState(state ThreadState) bool {
+	switch state {
+	case ThreadStateCompleted, ThreadStateBlocked:
+		return true
+	default:
+		return false
+	}
+}
+
+func latestRecordTime(records []event.Record) time.Time {
+	var latest time.Time
+	for _, record := range records {
+		if record.Timestamp.After(latest) {
+			latest = record.Timestamp
+		}
+	}
+	return latest
+}
+
+func explicitThreadState(payload map[string]any) (ThreadState, bool) {
+	value, ok := payloadString(payload, "thread_state")
+	if !ok {
+		return "", false
+	}
+	switch value {
+	case string(ThreadStateRunning):
+		return ThreadStateRunning, true
+	case string(ThreadStateWaitingPrompt):
+		return ThreadStateWaitingPrompt, true
+	case string(ThreadStateWaitingReview):
+		return ThreadStateWaitingReview, true
+	case string(ThreadStateCompleted):
+		return ThreadStateCompleted, true
+	case string(ThreadStateBlocked):
+		return ThreadStateBlocked, true
+	case string(ThreadStateOffline):
+		return ThreadStateOffline, true
+	case string(ThreadStateStale):
+		return ThreadStateStale, true
+	default:
+		return "", false
+	}
+}
+
+func lifecycleThreadState(record event.Record) (ThreadState, bool) {
+	switch {
+	case record.EventType == event.TypeError:
+		return ThreadStateBlocked, true
+	case record.MessageType == event.MessageTypeCommandResult &&
+		record.CommandType == event.CommandTypeSendPrompt &&
+		record.Status == event.CommandStatusFailed:
+		return ThreadStateWaitingPrompt, true
+	case record.MessageType == event.MessageTypeCommand &&
+		record.CommandType == event.CommandTypeSendPrompt:
+		return ThreadStateRunning, true
+	case record.MessageType == event.MessageTypeEvent &&
+		record.EventType == event.TypeCommand &&
+		payloadRole(record.Payload) == string(RoleUser):
+		return ThreadStateRunning, true
+	case record.MessageType == event.MessageTypeEvent &&
+		record.EventType == event.TypeAIOutput:
+		return ThreadStateRunning, true
+	case record.MessageType == event.MessageTypeEvent &&
+		record.EventType == event.TypeTerminalOutput:
+		if observed, _ := record.Payload["observed"].(bool); observed {
+			return "", false
+		}
+		if _, ok := payloadContent(record.Payload); ok {
+			return ThreadStateRunning, true
+		}
+		return "", false
+	default:
+		return "", false
 	}
 }
 
@@ -588,6 +907,7 @@ func mapRecordToMessage(threadID string, record event.Record) (Message, bool) {
 			Role:       RoleUser,
 			Content:    content,
 			CreatedAt:  record.Timestamp,
+			AgentKind:  payloadAgentKind(record.Payload),
 			SourceType: string(record.MessageType),
 		}, true
 	case record.MessageType == event.MessageTypeEvent &&
@@ -603,6 +923,7 @@ func mapRecordToMessage(threadID string, record event.Record) (Message, bool) {
 			Role:       RoleUser,
 			Content:    content,
 			CreatedAt:  record.Timestamp,
+			AgentKind:  payloadAgentKind(record.Payload),
 			SourceType: string(record.EventType),
 		}, true
 	case record.MessageType == event.MessageTypeEvent && record.EventType == event.TypeAIOutput:
@@ -616,6 +937,7 @@ func mapRecordToMessage(threadID string, record event.Record) (Message, bool) {
 			Role:       RoleAssistant,
 			Content:    content,
 			CreatedAt:  record.Timestamp,
+			AgentKind:  payloadAgentKind(record.Payload),
 			SourceType: string(record.EventType),
 		}, true
 	case record.MessageType == event.MessageTypeEvent && record.EventType == event.TypeTerminalOutput:
@@ -632,6 +954,7 @@ func mapRecordToMessage(threadID string, record event.Record) (Message, bool) {
 			Role:       RoleAssistant,
 			Content:    content,
 			CreatedAt:  record.Timestamp,
+			AgentKind:  payloadAgentKind(record.Payload),
 			SourceType: string(record.EventType),
 		}, true
 	default:
@@ -641,6 +964,18 @@ func mapRecordToMessage(threadID string, record event.Record) (Message, bool) {
 
 func payloadContent(payload map[string]any) (string, bool) {
 	return payloadString(payload, "content")
+}
+
+func payloadAgentKind(payload map[string]any) string {
+	return firstNonEmpty(
+		payloadStringValue(payload, "agent_kind"),
+		payloadStringValue(payload, "agent_name"),
+	)
+}
+
+func payloadStringValue(payload map[string]any, key string) string {
+	value, _ := payloadString(payload, key)
+	return value
 }
 
 func payloadString(payload map[string]any, key string) (string, bool) {

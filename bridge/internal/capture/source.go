@@ -26,6 +26,11 @@ type Source interface {
 	Start(ctx context.Context, sink Sink) error
 }
 
+type SemanticAdapter interface {
+	Source
+	Name() string
+}
+
 type ObservedEvent struct {
 	Meta  session.Metadata
 	Event session.Event
@@ -42,6 +47,11 @@ type ReaderSource struct {
 
 type MultiSource struct {
 	sources []Source
+}
+
+type SemanticCaptureSource struct {
+	logger   *log.Logger
+	adapters []SemanticAdapter
 }
 
 type FileWatcherSource struct {
@@ -79,6 +89,22 @@ func NewReaderSource(meta session.Metadata, name string, reader io.Reader, event
 
 func NewMultiSource(sources ...Source) MultiSource {
 	return MultiSource{sources: sources}
+}
+
+func NewSemanticCaptureSource(logger *log.Logger, adapters ...SemanticAdapter) SemanticCaptureSource {
+	if logger == nil {
+		logger = log.Default()
+	}
+	return SemanticCaptureSource{
+		logger:   logger,
+		adapters: adapters,
+	}
+}
+
+func (m MultiSource) Sources() []Source {
+	out := make([]Source, len(m.sources))
+	copy(out, m.sources)
+	return out
 }
 
 func NewFileWatcherSource(meta session.Metadata, root string) (*FileWatcherSource, error) {
@@ -179,6 +205,20 @@ func (m MultiSource) Start(ctx context.Context, sink Sink) error {
 	case <-done:
 		return nil
 	}
+}
+
+func (s SemanticCaptureSource) Start(ctx context.Context, sink Sink) error {
+	if len(s.adapters) == 0 {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	wrapped := make([]Source, 0, len(s.adapters))
+	for _, adapter := range s.adapters {
+		s.logger.Printf("semantic capture adapter enabled: %s", adapter.Name())
+		wrapped = append(wrapped, adapter)
+	}
+	return NewMultiSource(wrapped...).Start(ctx, sink)
 }
 
 func (s JSONLSource) Start(ctx context.Context, sink Sink) error {

@@ -100,6 +100,9 @@ func TestServiceListProjectsGroupsSessionsIntoProjects(t *testing.T) {
 	if found.RunningThreadCount != 0 {
 		t.Fatalf("expected 0 running visible threads, got %d", found.RunningThreadCount)
 	}
+	if !found.CreatedAt.Equal(base) {
+		t.Fatalf("expected earliest project created_at %s, got %s", base, found.CreatedAt)
+	}
 }
 
 func TestServiceListThreadsDerivesStateAndSummary(t *testing.T) {
@@ -154,6 +157,7 @@ func TestServiceListThreadsDerivesStateAndSummary(t *testing.T) {
 			},
 		}},
 	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
 
 	projectID := ProjectID(sessions[0])
 	threads, err := service.ListThreads(projectID)
@@ -207,6 +211,8 @@ func TestServiceListThreadsFallsBackToLatestPromptWhenAssistantSummaryMissing(t 
 			},
 		}},
 	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
 
 	threads, err := service.ListThreads(ProjectID(sessionRecord))
 	if err != nil {
@@ -250,6 +256,8 @@ func TestServiceListThreadsUsesPromptDerivedTitleInsteadOfProjectName(t *testing
 			},
 		}},
 	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
 
 	threads, err := service.ListThreads(ProjectID(sessionRecord))
 	if err != nil {
@@ -294,6 +302,8 @@ func TestServiceListThreadsFallsBackToGenericThreadTitleWhenNoReadableContent(t 
 			},
 		}},
 	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
 
 	threads, err := service.ListThreads(ProjectID(sessionRecord))
 	if err != nil {
@@ -335,6 +345,7 @@ func TestServicePrefersBridgeSemanticThreadFields(t *testing.T) {
 			},
 		}},
 	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
 
 	threads, err := service.ListThreads(ProjectID(sessionRecord))
 	if err != nil {
@@ -390,7 +401,7 @@ func TestServiceListMessagesFiltersDebugEventsAndMapsRoles(t *testing.T) {
 					MessageType: event.MessageTypeEvent,
 					EventType:   event.TypeAIOutput,
 					Timestamp:   base.Add(2 * time.Minute),
-					Payload:     map[string]any{"content": "Repo summary here"},
+					Payload:     map[string]any{"content": "Repo summary here", "agent_name": "codex"},
 				},
 			},
 		}},
@@ -411,6 +422,9 @@ func TestServiceListMessagesFiltersDebugEventsAndMapsRoles(t *testing.T) {
 	}
 	if messages[1].Content != "Repo summary here" {
 		t.Fatalf("expected assistant content, got %q", messages[1].Content)
+	}
+	if messages[1].AgentKind != "codex" {
+		t.Fatalf("expected assistant agent kind codex, got %q", messages[1].AgentKind)
 	}
 }
 
@@ -545,6 +559,9 @@ func TestServiceListThreadsAggregatesSessionsWithSameSemanticThreadID(t *testing
 	if threads[0].ID != "thread-semantic-1" {
 		t.Fatalf("expected semantic thread id, got %q", threads[0].ID)
 	}
+	if threads[0].SessionID != "session-2" {
+		t.Fatalf("expected latest backing session session-2, got %q", threads[0].SessionID)
+	}
 
 	messages, err := service.ListMessages("thread-semantic-1")
 	if err != nil {
@@ -552,6 +569,229 @@ func TestServiceListThreadsAggregatesSessionsWithSameSemanticThreadID(t *testing
 	}
 	if len(messages) != 2 {
 		t.Fatalf("expected merged messages from both sessions, got %d", len(messages))
+	}
+}
+
+func TestServiceListThreadsKeepsSemanticThreadIDWhenLatestCommandResultFallsBackToSessionID(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessionRecord := session.Session{
+		ID:             "session-2",
+		ProjectName:    "codeScope",
+		WorkspaceRoot:  "/workspace/codeScope",
+		MachineID:      "machine-1",
+		Status:         session.StatusRunning,
+		LastActivityAt: base.Add(3 * time.Minute),
+		StartedAt:      base,
+		CreatedAt:      base,
+		UpdatedAt:      base.Add(3 * time.Minute),
+	}
+	service := NewService(
+		testSessionReader{sessions: []session.Session{sessionRecord}},
+		testEventReader{bySession: map[string][]event.Record{
+			"session-2": {
+				{
+					ID:          "event-ai-1",
+					SessionID:   "session-2",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeAIOutput,
+					Timestamp:   base.Add(2 * time.Minute),
+					Payload: map[string]any{
+						"thread_id":         "thread-semantic-1",
+						"source_session_id": "session-2",
+						"thread_title":      "semantic thread",
+						"content":           "assistant reply",
+					},
+				},
+				{
+					ID:          "event-result-1",
+					SessionID:   "session-2",
+					MessageType: event.MessageTypeCommandResult,
+					CommandType: event.CommandTypeSendPrompt,
+					Status:      event.CommandStatusFailed,
+					Timestamp:   base.Add(3 * time.Minute),
+					Payload: map[string]any{
+						"thread_id":         "session-2",
+						"source_session_id": "session-2",
+						"error":             "side-channel mode does not support prompt injection",
+					},
+				},
+			},
+		}},
+	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
+
+	threads, err := service.ListThreads(ProjectID(sessionRecord))
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
+	if threads[0].ID != "thread-semantic-1" {
+		t.Fatalf("expected semantic thread id to survive latest fallback record, got %q", threads[0].ID)
+	}
+	if threads[0].Status != ThreadStateWaitingPrompt {
+		t.Fatalf("expected waiting_prompt from failed send_prompt, got %q", threads[0].Status)
+	}
+}
+
+func TestServicePrepareThreadLaunchChoosesLatestBridgeOnlineSession(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessions := []session.Session{
+		{
+			ID:                "session-offline-1",
+			ProjectName:       "codeScope",
+			WorkspaceRoot:     "/workspace/codeScope",
+			MachineID:         "machine-1",
+			Status:            session.StatusRunning,
+			BridgeOnline:      false,
+			LastActivityAt:    base.Add(2 * time.Minute),
+			BridgeConnectedAt: base.Add(time.Minute),
+			CreatedAt:         base,
+			UpdatedAt:         base.Add(2 * time.Minute),
+		},
+		{
+			ID:                "session-online-1",
+			ProjectName:       "codeScope",
+			WorkspaceRoot:     "/workspace/codeScope",
+			MachineID:         "machine-1",
+			Status:            session.StatusRunning,
+			BridgeOnline:      true,
+			LastActivityAt:    base.Add(4 * time.Minute),
+			BridgeConnectedAt: base.Add(3 * time.Minute),
+			CreatedAt:         base,
+			UpdatedAt:         base.Add(4 * time.Minute),
+		},
+	}
+	service := NewService(
+		testSessionReader{sessions: sessions},
+		testEventReader{bySession: map[string][]event.Record{}},
+	)
+	service.now = func() time.Time { return base.Add(5 * time.Minute) }
+
+	launch, err := service.PrepareThreadLaunch(ProjectID(sessions[0]), CreateThreadInput{
+		Content: "Create a release-grade project thread",
+	})
+	if err != nil {
+		t.Fatalf("prepare thread launch: %v", err)
+	}
+	if launch.BackingSessionID != "session-online-1" {
+		t.Fatalf("expected latest online session as executor, got %q", launch.BackingSessionID)
+	}
+	if launch.Thread.ProjectID != ProjectID(sessions[0]) {
+		t.Fatalf("expected project id to be preserved, got %q", launch.Thread.ProjectID)
+	}
+	if launch.Thread.SessionID != "session-online-1" {
+		t.Fatalf("expected thread backing session session-online-1, got %q", launch.Thread.SessionID)
+	}
+	if launch.Thread.Status != ThreadStateRunning {
+		t.Fatalf("expected created thread to start running, got %q", launch.Thread.Status)
+	}
+	if launch.Thread.Summary != "Create a release-grade project thread" {
+		t.Fatalf("expected first prompt as summary, got %q", launch.Thread.Summary)
+	}
+}
+
+func TestServicePrepareThreadLaunchFailsWithoutWritableBridgeSession(t *testing.T) {
+	sessionRecord := session.Session{
+		ID:             "session-offline-1",
+		ProjectName:    "codeScope",
+		WorkspaceRoot:  "/workspace/codeScope",
+		MachineID:      "machine-1",
+		Status:         session.StatusRunning,
+		BridgeOnline:   false,
+		LastActivityAt: time.Date(2026, 3, 19, 9, 2, 0, 0, time.UTC),
+		CreatedAt:      time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC),
+		UpdatedAt:      time.Date(2026, 3, 19, 9, 2, 0, 0, time.UTC),
+	}
+	service := NewService(
+		testSessionReader{sessions: []session.Session{sessionRecord}},
+		testEventReader{bySession: map[string][]event.Record{}},
+	)
+
+	_, err := service.PrepareThreadLaunch(ProjectID(sessionRecord), CreateThreadInput{
+		Content: "Try to start a thread without an online bridge",
+	})
+	if !errors.Is(err, ErrNoWritableSession) {
+		t.Fatalf("expected ErrNoWritableSession, got %v", err)
+	}
+}
+
+func TestServiceResolveThreadExecutionChoosesOnlineSessionWithinSameSemanticThread(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessions := []session.Session{
+		{
+			ID:                "session-offline-new",
+			ProjectName:       "codeScope",
+			WorkspaceRoot:     "/workspace/codeScope",
+			MachineID:         "machine-1",
+			Status:            session.StatusRunning,
+			BridgeOnline:      false,
+			LastActivityAt:    base.Add(4 * time.Minute),
+			BridgeConnectedAt: base.Add(4 * time.Minute),
+			CreatedAt:         base,
+			UpdatedAt:         base.Add(4 * time.Minute),
+		},
+		{
+			ID:                "session-online-old",
+			ProjectName:       "codeScope",
+			WorkspaceRoot:     "/workspace/codeScope",
+			MachineID:         "machine-1",
+			Status:            session.StatusRunning,
+			BridgeOnline:      true,
+			LastActivityAt:    base.Add(2 * time.Minute),
+			BridgeConnectedAt: base.Add(2 * time.Minute),
+			CreatedAt:         base,
+			UpdatedAt:         base.Add(2 * time.Minute),
+		},
+	}
+	service := NewService(
+		testSessionReader{sessions: sessions},
+		testEventReader{bySession: map[string][]event.Record{
+			"session-offline-new": {
+				{
+					ID:          "event-ai-new",
+					SessionID:   "session-offline-new",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeAIOutput,
+					Timestamp:   base.Add(4 * time.Minute),
+					Payload: map[string]any{
+						"thread_id":    "thread-semantic-1",
+						"thread_title": "formal thread",
+						"content":      "latest assistant output",
+					},
+				},
+			},
+			"session-online-old": {
+				{
+					ID:          "event-user-old",
+					SessionID:   "session-online-old",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeCommand,
+					Timestamp:   base.Add(2 * time.Minute),
+					Payload: map[string]any{
+						"thread_id":    "thread-semantic-1",
+						"thread_title": "formal thread",
+						"role":         "user",
+						"content":      "continue work",
+					},
+				},
+			},
+		}},
+	)
+
+	execution, err := service.ResolveThreadExecution("thread-semantic-1")
+	if err != nil {
+		t.Fatalf("resolve thread execution: %v", err)
+	}
+	if execution.Thread.ID != "thread-semantic-1" {
+		t.Fatalf("expected thread-semantic-1, got %q", execution.Thread.ID)
+	}
+	if execution.WritableSessionID != "session-online-old" {
+		t.Fatalf("expected online session to win for execution, got %q", execution.WritableSessionID)
+	}
+	if len(execution.SessionIDs) != 2 {
+		t.Fatalf("expected both backing sessions to be tracked, got %#v", execution.SessionIDs)
 	}
 }
 
@@ -585,6 +825,7 @@ func TestServiceListThreadsFiltersDebugOnlyGhostThreads(t *testing.T) {
 			},
 		}},
 	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
 
 	threads, err := service.ListThreads(ProjectID(sessionRecord))
 	if err != nil {
@@ -595,7 +836,7 @@ func TestServiceListThreadsFiltersDebugOnlyGhostThreads(t *testing.T) {
 	}
 }
 
-func TestServiceListThreadsMarksOldInactiveThreadAsWaitingPrompt(t *testing.T) {
+func TestServiceListThreadsMarksOldInactiveThreadAsStale(t *testing.T) {
 	base := time.Now().UTC().Add(-2 * activeThreadWindow)
 	sessionRecord := session.Session{
 		ID:             "session-old-1",
@@ -603,6 +844,7 @@ func TestServiceListThreadsMarksOldInactiveThreadAsWaitingPrompt(t *testing.T) {
 		WorkspaceRoot:  "/workspace/codeScope",
 		MachineID:      "machine-1",
 		Status:         session.StatusRunning,
+		BridgeOnline:   true,
 		LastActivityAt: base,
 		StartedAt:      base.Add(-10 * time.Minute),
 		CreatedAt:      base.Add(-10 * time.Minute),
@@ -634,7 +876,449 @@ func TestServiceListThreadsMarksOldInactiveThreadAsWaitingPrompt(t *testing.T) {
 	if len(threads) != 1 {
 		t.Fatalf("expected 1 thread, got %d", len(threads))
 	}
+	if threads[0].Status != ThreadStateStale {
+		t.Fatalf("expected stale thread to become stale, got %q", threads[0].Status)
+	}
+}
+
+func TestServiceListThreadsTreatsNewPromptAfterFailedPromptAsRunning(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessionRecord := session.Session{
+		ID:             "session-retry-1",
+		ProjectName:    "codeScope",
+		WorkspaceRoot:  "/workspace/codeScope",
+		MachineID:      "machine-1",
+		Status:         session.StatusCreated,
+		LastActivityAt: base.Add(2 * time.Minute),
+		CreatedAt:      base,
+		UpdatedAt:      base.Add(2 * time.Minute),
+	}
+	service := NewService(
+		testSessionReader{sessions: []session.Session{sessionRecord}},
+		testEventReader{bySession: map[string][]event.Record{
+			"session-retry-1": {
+				{
+					ID:          "event-failed-result",
+					SessionID:   "session-retry-1",
+					MessageType: event.MessageTypeCommandResult,
+					CommandType: event.CommandTypeSendPrompt,
+					Status:      event.CommandStatusFailed,
+					Timestamp:   base.Add(time.Minute),
+					Payload:     map[string]any{"error": "bridge offline"},
+				},
+				{
+					ID:          "event-retry-command",
+					SessionID:   "session-retry-1",
+					MessageType: event.MessageTypeCommand,
+					CommandType: event.CommandTypeSendPrompt,
+					Timestamp:   base.Add(2 * time.Minute),
+					Payload:     map[string]any{"content": "retry after reconnect"},
+				},
+			},
+		}},
+	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
+
+	threads, err := service.ListThreads(ProjectID(sessionRecord))
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
+	if threads[0].Status != ThreadStateRunning {
+		t.Fatalf("expected retried prompt to move thread back to running, got %q", threads[0].Status)
+	}
+}
+
+func TestServiceListThreadsTreatsNewAssistantOutputAfterErrorAsRunning(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessionRecord := session.Session{
+		ID:             "session-recovered-1",
+		ProjectName:    "codeScope",
+		WorkspaceRoot:  "/workspace/codeScope",
+		MachineID:      "machine-1",
+		Status:         session.StatusRunning,
+		LastActivityAt: base.Add(2 * time.Minute),
+		CreatedAt:      base,
+		UpdatedAt:      base.Add(2 * time.Minute),
+	}
+	service := NewService(
+		testSessionReader{sessions: []session.Session{sessionRecord}},
+		testEventReader{bySession: map[string][]event.Record{
+			"session-recovered-1": {
+				{
+					ID:          "event-error-old",
+					SessionID:   "session-recovered-1",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeError,
+					Timestamp:   base.Add(time.Minute),
+					Payload:     map[string]any{"message": "temporary failure"},
+				},
+				{
+					ID:          "event-ai-new",
+					SessionID:   "session-recovered-1",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeAIOutput,
+					Timestamp:   base.Add(2 * time.Minute),
+					Payload:     map[string]any{"content": "recovered and continued"},
+				},
+			},
+		}},
+	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
+
+	threads, err := service.ListThreads(ProjectID(sessionRecord))
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
+	if threads[0].Status != ThreadStateRunning {
+		t.Fatalf("expected newer assistant output to override old error, got %q", threads[0].Status)
+	}
+}
+
+func TestServiceListThreadsUsesLatestLifecycleEventBeforeLegacySessionStatus(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessionRecord := session.Session{
+		ID:             "session-created-1",
+		ProjectName:    "codeScope",
+		WorkspaceRoot:  "/workspace/codeScope",
+		MachineID:      "machine-1",
+		Status:         session.StatusCreated,
+		LastActivityAt: base.Add(2 * time.Minute),
+		CreatedAt:      base,
+		UpdatedAt:      base.Add(2 * time.Minute),
+	}
+	service := NewService(
+		testSessionReader{sessions: []session.Session{sessionRecord}},
+		testEventReader{bySession: map[string][]event.Record{
+			"session-created-1": {
+				{
+					ID:          "event-user-command",
+					SessionID:   "session-created-1",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeCommand,
+					Timestamp:   base.Add(2 * time.Minute),
+					Payload: map[string]any{
+						"role":    "user",
+						"content": "continue implementing the state machine",
+					},
+				},
+			},
+		}},
+	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
+
+	threads, err := service.ListThreads(ProjectID(sessionRecord))
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
+	if threads[0].Status != ThreadStateRunning {
+		t.Fatalf("expected real user command to override created session fallback, got %q", threads[0].Status)
+	}
+}
+
+func TestServiceListThreadsPrefersExplicitWaitingPromptHintFromCapturedAssistantTurn(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessionRecord := session.Session{
+		ID:             "session-codex-turn-1",
+		ProjectName:    "codeScope",
+		WorkspaceRoot:  "/workspace/codeScope",
+		MachineID:      "machine-1",
+		Status:         session.StatusRunning,
+		LastActivityAt: base.Add(2 * time.Minute),
+		CreatedAt:      base,
+		UpdatedAt:      base.Add(2 * time.Minute),
+	}
+	service := NewService(
+		testSessionReader{sessions: []session.Session{sessionRecord}},
+		testEventReader{bySession: map[string][]event.Record{
+			"session-codex-turn-1": {
+				{
+					ID:          "event-assistant-turn",
+					SessionID:   "session-codex-turn-1",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeAIOutput,
+					Timestamp:   base.Add(2 * time.Minute),
+					Payload: map[string]any{
+						"semantic_kind": "thread_message",
+						"content":       "done with this turn",
+						"thread_state":  "waiting_prompt",
+					},
+				},
+			},
+		}},
+	)
+
+	threads, err := service.ListThreads(ProjectID(sessionRecord))
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
 	if threads[0].Status != ThreadStateWaitingPrompt {
-		t.Fatalf("expected stale thread to become waiting_prompt, got %q", threads[0].Status)
+		t.Fatalf("expected explicit assistant waiting_prompt hint to win, got %q", threads[0].Status)
+	}
+}
+
+func TestServiceListThreadsPrefersExplicitWaitingReviewHintFromCapturedAssistantTurn(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessionRecord := session.Session{
+		ID:             "session-review-1",
+		ProjectName:    "codeScope",
+		WorkspaceRoot:  "/workspace/codeScope",
+		MachineID:      "machine-1",
+		Status:         session.StatusRunning,
+		BridgeOnline:   true,
+		LastActivityAt: base.Add(2 * time.Minute),
+		CreatedAt:      base,
+		UpdatedAt:      base.Add(2 * time.Minute),
+	}
+	service := NewService(
+		testSessionReader{sessions: []session.Session{sessionRecord}},
+		testEventReader{bySession: map[string][]event.Record{
+			"session-review-1": {
+				{
+					ID:          "event-assistant-review",
+					SessionID:   "session-review-1",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeAIOutput,
+					Timestamp:   base.Add(2 * time.Minute),
+					Payload: map[string]any{
+						"semantic_kind": "thread_message",
+						"content":       "Please approve the changes before I continue.",
+						"thread_state":  "waiting_review",
+					},
+				},
+			},
+		}},
+	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
+
+	threads, err := service.ListThreads(ProjectID(sessionRecord))
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
+	if threads[0].Status != ThreadStateWaitingReview {
+		t.Fatalf("expected explicit assistant waiting_review hint to win, got %q", threads[0].Status)
+	}
+}
+
+func TestServiceListThreadsMarksRecentDisconnectedThreadAsOffline(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessionRecord := session.Session{
+		ID:                   "session-offline-state-1",
+		ProjectName:          "codeScope",
+		WorkspaceRoot:        "/workspace/codeScope",
+		MachineID:            "machine-1",
+		Status:               session.StatusRunning,
+		BridgeOnline:         false,
+		BridgeDisconnectedAt: base.Add(2 * time.Minute),
+		LastActivityAt:       base.Add(2 * time.Minute),
+		CreatedAt:            base,
+		UpdatedAt:            base.Add(2 * time.Minute),
+	}
+	service := NewService(
+		testSessionReader{sessions: []session.Session{sessionRecord}},
+		testEventReader{bySession: map[string][]event.Record{
+			"session-offline-state-1": {
+				{
+					ID:          "event-user-command",
+					SessionID:   "session-offline-state-1",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeCommand,
+					Timestamp:   base.Add(2 * time.Minute),
+					Payload: map[string]any{
+						"role":    "user",
+						"content": "continue implementing the state machine",
+					},
+				},
+			},
+		}},
+	)
+	service.now = func() time.Time { return base.Add(3 * time.Minute) }
+
+	threads, err := service.ListThreads(ProjectID(sessionRecord))
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
+	if threads[0].Status != ThreadStateOffline {
+		t.Fatalf("expected disconnected thread to become offline, got %q", threads[0].Status)
+	}
+}
+
+func TestServiceListThreadsMarksQuietRunningThreadAsStale(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessionRecord := session.Session{
+		ID:             "session-stale-1",
+		ProjectName:    "codeScope",
+		WorkspaceRoot:  "/workspace/codeScope",
+		MachineID:      "machine-1",
+		Status:         session.StatusRunning,
+		BridgeOnline:   true,
+		LastActivityAt: base,
+		StartedAt:      base.Add(-10 * time.Minute),
+		CreatedAt:      base.Add(-10 * time.Minute),
+		UpdatedAt:      base,
+	}
+	service := NewService(
+		testSessionReader{sessions: []session.Session{sessionRecord}},
+		testEventReader{bySession: map[string][]event.Record{
+			"session-stale-1": {
+				{
+					ID:          "event-user-1",
+					SessionID:   "session-stale-1",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeCommand,
+					Timestamp:   base,
+					Payload: map[string]any{
+						"role":    "user",
+						"content": "still working",
+					},
+				},
+			},
+		}},
+	)
+	service.now = func() time.Time { return base.Add(2 * activeThreadWindow) }
+
+	threads, err := service.ListThreads(ProjectID(sessionRecord))
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
+	if threads[0].Status != ThreadStateStale {
+		t.Fatalf("expected quiet running thread to become stale, got %q", threads[0].Status)
+	}
+}
+
+func TestServiceListThreadsIgnoresHeartbeatRunningHintAfterAssistantWaitingPrompt(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessionRecord := session.Session{
+		ID:             "session-heartbeat-1",
+		ProjectName:    "codeScope",
+		WorkspaceRoot:  "/workspace/codeScope",
+		MachineID:      "machine-1",
+		Status:         session.StatusRunning,
+		BridgeOnline:   true,
+		LastActivityAt: base.Add(3 * time.Minute),
+		CreatedAt:      base,
+		UpdatedAt:      base.Add(3 * time.Minute),
+	}
+	service := NewService(
+		testSessionReader{sessions: []session.Session{sessionRecord}},
+		testEventReader{bySession: map[string][]event.Record{
+			"session-heartbeat-1": {
+				{
+					ID:          "event-assistant-turn",
+					SessionID:   "session-heartbeat-1",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeAIOutput,
+					Timestamp:   base.Add(2 * time.Minute),
+					Payload: map[string]any{
+						"semantic_kind": "thread_message",
+						"content":       "done with this turn",
+						"thread_state":  "waiting_prompt",
+					},
+				},
+				{
+					ID:          "event-heartbeat",
+					SessionID:   "session-heartbeat-1",
+					MessageType: event.MessageTypeHeartbeat,
+					EventType:   event.TypeHeartbeat,
+					Timestamp:   base.Add(3 * time.Minute),
+					Payload: map[string]any{
+						"source":       "discovery",
+						"thread_state": "running",
+					},
+				},
+			},
+		}},
+	)
+	service.now = func() time.Time { return base.Add(4 * time.Minute) }
+
+	threads, err := service.ListThreads(ProjectID(sessionRecord))
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
+	if threads[0].Status != ThreadStateWaitingPrompt {
+		t.Fatalf("expected heartbeat running hint to be ignored after waiting_prompt, got %q", threads[0].Status)
+	}
+}
+
+func TestServiceListThreadsIgnoresObservedDebugRunningHintAfterAssistantWaitingReview(t *testing.T) {
+	base := time.Date(2026, 3, 19, 9, 0, 0, 0, time.UTC)
+	sessionRecord := session.Session{
+		ID:             "session-debug-1",
+		ProjectName:    "codeScope",
+		WorkspaceRoot:  "/workspace/codeScope",
+		MachineID:      "machine-1",
+		Status:         session.StatusRunning,
+		BridgeOnline:   true,
+		LastActivityAt: base.Add(3 * time.Minute),
+		CreatedAt:      base,
+		UpdatedAt:      base.Add(3 * time.Minute),
+	}
+	service := NewService(
+		testSessionReader{sessions: []session.Session{sessionRecord}},
+		testEventReader{bySession: map[string][]event.Record{
+			"session-debug-1": {
+				{
+					ID:          "event-assistant-review",
+					SessionID:   "session-debug-1",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeAIOutput,
+					Timestamp:   base.Add(2 * time.Minute),
+					Payload: map[string]any{
+						"semantic_kind": "thread_message",
+						"content":       "Please review before I continue.",
+						"thread_state":  "waiting_review",
+					},
+				},
+				{
+					ID:          "event-observed-debug",
+					SessionID:   "session-debug-1",
+					MessageType: event.MessageTypeEvent,
+					EventType:   event.TypeTerminalOutput,
+					Timestamp:   base.Add(3 * time.Minute),
+					Payload: map[string]any{
+						"semantic_kind":  "debug_event",
+						"content":        "[bridge] observing codex session pid=100",
+						"observed":       true,
+						"thread_state":   "running",
+						"debug_category": "process_observation",
+					},
+				},
+			},
+		}},
+	)
+	service.now = func() time.Time { return base.Add(4 * time.Minute) }
+
+	threads, err := service.ListThreads(ProjectID(sessionRecord))
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
+	if threads[0].Status != ThreadStateWaitingReview {
+		t.Fatalf("expected observed debug running hint to be ignored after waiting_review, got %q", threads[0].Status)
 	}
 }

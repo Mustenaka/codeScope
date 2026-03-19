@@ -1,3 +1,40 @@
+## [0.8.4] - 2026-03-19
+### Features
+- Added release-facing workspace metadata so project cards and detail pages now expose `created_at` and `last_activity_at` instead of only showing name and path.
+- Added agent-source metadata to thread messages so assistant replies can be labeled as `Codex` or `Claude` in the release conversation view.
+- Reworked the mobile release UI from `Projects` wording toward clearer `Workspaces` wording and added richer overview cards for workspace/thread context.
+- Added long-content handling for release pages: thread summaries, assistant replies, and prompt-task text now collapse into preview blocks with scrollable bottom-sheet detail views.
+- Added user-facing server error presentation for missing writable bridge sessions so create-thread and prompt failures now explain how to recover instead of exposing raw transport exceptions.
+
+### Design Rationale
+- The formal release flow had already moved to `project -> thread -> message`, but the visible UX still looked like an internal compatibility tool because key context such as time, source agent, and actionable failure guidance was missing.
+- Long prompt or summary text should not push core conversation content off screen, so release views now favor preview-first layouts with explicit detail drawers rather than unbounded inline text.
+- Users reason about active workspaces, recent activity, and which agent produced a reply more easily than about raw session identifiers or transport exceptions.
+
+### Notes & Caveats
+- These changes improve release UX and metadata visibility, but they do not remove the underlying dependency on bridge-online writable sessions for prompt dispatch.
+- The app now presents `project has no writable bridge session` as a recoverable local-agent availability issue, but the runtime still requires a bridge-connected executor.
+- P2P direct transport, relay fallback, and content-plane migration remain intentionally out of scope for this version.
+
+## [0.8.3] - 2026-03-19
+### Features
+- Extended the release `thread_state` model with explicit `offline` and `stale` states across `bridge`, `server`, and `mobile`.
+- Reworked server-side thread lifecycle derivation into a clearer state-machine flow: latest explicit lifecycle hint first, legacy session status only as fallback, then connectivity/freshness overlays.
+- Added bridge-side `waiting_review` lifecycle input for Claude transcript capture when the assistant stops in `pause_turn`.
+- Updated mobile thread mapping and summaries so new lifecycle states render as release-oriented thread states instead of falling back to debug/session interpretations.
+- Removed default `thread_state=running` tagging from bridge heartbeat and process-observation debug payloads so release lifecycle state is no longer polluted by discovery/debug traffic.
+
+### Design Rationale
+- The earlier read model still mixed lifecycle meaning with compatibility-layer heuristics, which made old quiet threads look like `waiting_prompt` and disconnected threads look indistinguishable from active ones.
+- `offline` and `stale` are release-facing user states, not transport/debug metadata, so they need to exist in the shared model before any later P2P work.
+- Treating bridge lifecycle hints as authoritative inputs and applying connectivity/freshness as a final overlay is more stable than scattering special cases through thread aggregation.
+
+### Notes & Caveats
+- The lifecycle model is now more formal, but it is still a derived read-model state machine rather than a fully independent persisted runtime state store.
+- `waiting_review` currently has one formal producer path through Claude `pause_turn`; other agents still need equivalent lifecycle hints.
+- Non-observed real terminal output can still produce `running` as a lifecycle hint; only debug/heartbeat observation traffic is stripped of release-state semantics.
+- P2P direct transport, relay fallback, and content-plane migration remain intentionally out of scope for this version and are still pending.
+
 ## [0.8.2] - 2026-03-19
 ### Features
 - Added a dedicated formal-release roadmap document and a consolidated prompt set for future cross-end implementation work.

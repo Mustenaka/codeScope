@@ -33,6 +33,12 @@ class MockCodeScopeRestClient implements CodeScopeRestClient {
   }
 
   @override
+  Future<ThreadRecord> createProjectThread(String projectId, String content) async {
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    return _provider.createProjectThread(projectId, content);
+  }
+
+  @override
   Future<ThreadRecord> fetchThreadDetail(String threadId) async {
     await Future<void>.delayed(const Duration(milliseconds: 150));
     return _provider.buildThreadDetail(threadId);
@@ -42,6 +48,19 @@ class MockCodeScopeRestClient implements CodeScopeRestClient {
   Future<List<ThreadMessageRecord>> fetchThreadMessages(String threadId) async {
     await Future<void>.delayed(const Duration(milliseconds: 150));
     return _provider.buildThreadMessages(threadId);
+  }
+
+  @override
+  Future<List<PromptCommandTask>> fetchThreadCommands(String threadId) async {
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    return _provider.buildPromptCommands(threadId);
+  }
+
+  @override
+  Future<PromptCommandTask> sendThreadPrompt(
+      String threadId, String content) async {
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    return _provider.createPromptCommand(threadId, content);
   }
 
   @override
@@ -81,11 +100,26 @@ class MockCodeScopeRestClient implements CodeScopeRestClient {
   }
 
   @override
+  Future<List<FileTreeNode>> fetchProjectFileTree(String projectId) async {
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    return _provider.buildFileTree(projectId);
+  }
+
+  @override
   Future<FileContentRecord> fetchSessionFileContent(
     String sessionId,
     String path,
   ) async {
     await Future<void>.delayed(const Duration(milliseconds: 120));
     return _provider.buildFileContent(sessionId, path);
+  }
+
+  @override
+  Future<FileContentRecord> fetchProjectFileContent(
+    String projectId,
+    String path,
+  ) async {
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    return _provider.buildFileContent(projectId, path);
   }
 }

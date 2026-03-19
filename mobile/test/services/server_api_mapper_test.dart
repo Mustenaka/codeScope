@@ -94,6 +94,7 @@ void main() {
         'machine_id': 'devbox',
         'thread_count': 2,
         'running_thread_count': 1,
+        'created_at': '2026-03-19T09:55:00Z',
         'last_activity_at': '2026-03-19T10:05:00Z',
       });
       final thread = ServerApiMapper.threadFromJson(<String, Object?>{
@@ -116,15 +117,44 @@ void main() {
           'created_at': '2026-03-19T10:05:00Z',
           'sequence': 1,
           'source_type': 'ai_output',
+          'agent_kind': 'codex',
         },
       );
 
       expect(project.name, 'codeScope');
+      expect(project.createdAt, DateTime.parse('2026-03-19T09:55:00Z'));
       expect(project.threadCount, 2);
       expect(thread.status, ThreadStatus.running);
       expect(thread.title, 'Implemented server API');
       expect(message.role, ThreadMessageRole.assistant);
       expect(message.content, 'Implemented server API');
+      expect(message.agentKind, 'codex');
+    });
+
+    test('maps offline and stale thread statuses', () {
+      final offline = ServerApiMapper.threadFromJson(<String, Object?>{
+        'id': 'thread-offline-1',
+        'project_id': 'project-1',
+        'session_id': 'session-1',
+        'title': 'Offline thread',
+        'status': 'offline',
+        'summary': '',
+        'last_activity_at': '2026-03-19T10:05:00Z',
+        'started_at': '2026-03-19T10:00:00Z',
+      });
+      final stale = ServerApiMapper.threadFromJson(<String, Object?>{
+        'id': 'thread-stale-1',
+        'project_id': 'project-1',
+        'session_id': 'session-1',
+        'title': 'Stale thread',
+        'status': 'stale',
+        'summary': '',
+        'last_activity_at': '2026-03-19T09:05:00Z',
+        'started_at': '2026-03-19T09:00:00Z',
+      });
+
+      expect(offline.status, ThreadStatus.offline);
+      expect(stale.status, ThreadStatus.stale);
     });
 
     test('maps real captured user thread events into thread messages', () {

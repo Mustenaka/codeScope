@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_routes.dart';
 import '../../app/app_scope.dart';
+import '../../app/display_text.dart';
 import '../../services/app_services.dart';
 import '../settings/settings_button.dart';
 import 'project_controller.dart';
@@ -54,7 +55,7 @@ class _ProjectPageState extends State<ProjectPage> {
       builder: (BuildContext context, Widget? child) {
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Projects'),
+            title: const Text('Workspaces'),
             actions: const <Widget>[SettingsButton()],
           ),
           body: RefreshIndicator(
@@ -81,22 +82,81 @@ class _ProjectPageState extends State<ProjectPage> {
                     (ProjectRecord project) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Card(
-                        child: ListTile(
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
                           onTap: () {
                             Navigator.of(context).pushNamed(
                               AppRoutes.projectDetail,
                               arguments: project,
                             );
                           },
-                          title: Text(project.name),
-                          subtitle: Text(project.workspaceRoot),
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: <Widget>[
-                              Text('${project.threadCount} threads'),
-                              Text('${project.runningThreadCount} running'),
-                            ],
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: <Widget>[
+                                          Text(
+                                            project.name,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            project.workspaceRoot,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: <Widget>[
+                                        Text('${project.threadCount} threads'),
+                                        Text(
+                                          '${project.runningThreadCount} running',
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: <Widget>[
+                                    _MetadataChip(
+                                      label:
+                                          'Created ${formatTimestamp(project.createdAt)}',
+                                    ),
+                                    _MetadataChip(
+                                      label:
+                                          'Active ${formatTimestamp(project.lastActivityAt)}',
+                                    ),
+                                    _MetadataChip(
+                                      label: project.machineId,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -133,7 +193,7 @@ class _HeaderBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            'Projects',
+            'Workspaces',
             style: theme.textTheme.headlineSmall?.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -142,13 +202,34 @@ class _HeaderBanner extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             useMock
-                ? 'Project -> thread -> message view running on mock data.'
-                : 'Project -> thread -> message view connected to server.',
+                ? 'Workspace -> thread -> message view running on mock data.'
+                : 'Workspace -> thread -> message view connected to server.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: Colors.white.withValues(alpha: 0.84),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MetadataChip extends StatelessWidget {
+  const _MetadataChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall,
       ),
     );
   }

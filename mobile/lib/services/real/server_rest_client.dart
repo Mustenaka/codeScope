@@ -63,6 +63,16 @@ class ServerCodeScopeRestClient implements CodeScopeRestClient {
   }
 
   @override
+  Future<ThreadRecord> createProjectThread(
+      String projectId, String content) async {
+    final body = await _postJson(
+      'projects/$projectId/threads',
+      <String, Object?>{'content': content},
+    );
+    return ServerApiMapper.threadFromJson(_asJsonMap(body));
+  }
+
+  @override
   Future<ThreadRecord> fetchThreadDetail(String threadId) async {
     final body = await _getJson('threads/$threadId');
     return ServerApiMapper.threadFromJson(_asJsonMap(body));
@@ -75,6 +85,25 @@ class ServerCodeScopeRestClient implements CodeScopeRestClient {
       throw const FormatException('Expected a JSON array for thread messages.');
     }
     return ServerApiMapper.threadMessageListFromJson(body);
+  }
+
+  @override
+  Future<List<PromptCommandTask>> fetchThreadCommands(String threadId) async {
+    final body = await _getJson('threads/$threadId/commands');
+    if (body is! List<Object?>) {
+      throw const FormatException('Expected a JSON array for command tasks.');
+    }
+    return ServerApiMapper.commandTaskListFromJson(body);
+  }
+
+  @override
+  Future<PromptCommandTask> sendThreadPrompt(
+      String threadId, String content) async {
+    final body = await _postJson(
+      'threads/$threadId/commands/prompt',
+      <String, Object?>{'content': content},
+    );
+    return ServerApiMapper.commandTaskFromJson(_asJsonMap(body));
   }
 
   @override
@@ -129,12 +158,32 @@ class ServerCodeScopeRestClient implements CodeScopeRestClient {
   }
 
   @override
+  Future<List<FileTreeNode>> fetchProjectFileTree(String projectId) async {
+    final body = await _getJson('projects/$projectId/files/tree');
+    if (body is! List<Object?>) {
+      throw const FormatException('Expected a JSON array for file tree.');
+    }
+    return ServerApiMapper.fileTreeFromJson(body);
+  }
+
+  @override
   Future<FileContentRecord> fetchSessionFileContent(
     String sessionId,
     String path,
   ) async {
     final body = await _getJson(
       'sessions/$sessionId/files/content?path=${Uri.encodeQueryComponent(path)}',
+    );
+    return ServerApiMapper.fileContentFromJson(_asJsonMap(body));
+  }
+
+  @override
+  Future<FileContentRecord> fetchProjectFileContent(
+    String projectId,
+    String path,
+  ) async {
+    final body = await _getJson(
+      'projects/$projectId/files/content?path=${Uri.encodeQueryComponent(path)}',
     );
     return ServerApiMapper.fileContentFromJson(_asJsonMap(body));
   }

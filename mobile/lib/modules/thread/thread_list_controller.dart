@@ -59,6 +59,15 @@ class ThreadListController extends ChangeNotifier {
     );
   }
 
+  void prependThread(ThreadRecord thread) {
+    _threads = <ThreadRecord>[thread, ..._threads.where((item) => item.id != thread.id)]
+      ..sort(
+        (ThreadRecord left, ThreadRecord right) =>
+            right.lastActivityAt.compareTo(left.lastActivityAt),
+      );
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _subscription?.cancel();

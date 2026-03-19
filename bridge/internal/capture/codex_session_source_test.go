@@ -77,8 +77,20 @@ func TestCodexSessionSourceEmitsRealUserAndAssistantMessages(t *testing.T) {
 	if events[0].Event.Payload["thread_title"] != "Real capture thread" {
 		t.Fatalf("expected thread title from session index, got %#v", events[0].Event.Payload["thread_title"])
 	}
+	if events[0].Event.Payload["semantic_kind"] != "thread_message" {
+		t.Fatalf("expected semantic thread_message kind, got %#v", events[0].Event.Payload["semantic_kind"])
+	}
+	if events[0].Event.Payload["thread_state"] != session.ThreadStateRunning {
+		t.Fatalf("expected user message to keep thread running, got %#v", events[0].Event.Payload["thread_state"])
+	}
 	if events[1].Event.Type != session.EventTypeAIOutput {
 		t.Fatalf("expected second event to be ai_output, got %q", events[1].Event.Type)
+	}
+	if events[1].Event.Payload["semantic_kind"] != "thread_message" {
+		t.Fatalf("expected assistant semantic thread_message kind, got %#v", events[1].Event.Payload["semantic_kind"])
+	}
+	if events[1].Event.Payload["thread_state"] != session.ThreadStateWaitingPrompt {
+		t.Fatalf("expected assistant full-turn capture to mark waiting_prompt, got %#v", events[1].Event.Payload["thread_state"])
 	}
 }
 

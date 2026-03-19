@@ -2,6 +2,7 @@ package capture
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -91,5 +92,71 @@ func TestJSONLSourceRejectsInvalidRecords(t *testing.T) {
 
 	if err := source.Start(ctx, recorder); err == nil {
 		t.Fatal("expected invalid jsonl source input to fail")
+	}
+}
+
+type semanticAdapterStub struct {
+	name   string
+	event  ObservedEvent
+	called chan string
+}
+
+func (s semanticAdapterStub) Name() string {
+	return s.name
+}
+
+func (s semanticAdapterStub) Start(ctx context.Context, sink Sink) error {
+	select {
+	case s.called <- s.name:
+	default:
+	}
+	if err := sink.Emit(ctx, s.event); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestSemanticCaptureSourceStartsAllAdapters(t *testing.T) {
+	recorder := &sinkRecorder{}
+	called := make(chan string, 4)
+	source := NewSemanticCaptureSource(nil,
+		semanticAdapterStub{
+			name:   "codex",
+			called: called,
+			event: ObservedEvent{
+				Meta:  session.Metadata{SessionID: "session-1"},
+				Event: session.Event{Type: session.EventTypeCommand, Payload: map[string]any{"semantic_kind": "thread_message"}},
+			},
+		},
+		semanticAdapterStub{
+			name:   "claude",
+			called: called,
+			event: ObservedEvent{
+				Meta:  session.Metadata{SessionID: "session-2"},
+				Event: session.Event{Type: session.EventTypeAIOutput, Payload: map[string]any{"semantic_kind": "thread_message"}},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+
+	err := source.Start(ctx, recorder)
+	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context termination, got %v", err)
+	}
+
+	started := map[string]bool{}
+	for len(called) > 0 {
+		started[<-called] = true
+	}
+	if !started["codex"] || !started["claude"] {
+		t.Fatalf("expected both adapters to start, got %#v", started)
+	}
+
+	events := recorder.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("expected 2 semantic events, got %d", len(events))
 	}
 }

@@ -6,6 +6,7 @@ class ProjectRecord {
     required this.machineId,
     required this.threadCount,
     required this.runningThreadCount,
+    required this.createdAt,
     required this.lastActivityAt,
   });
 
@@ -15,5 +16,6 @@ class ProjectRecord {
   final String machineId;
   final int threadCount;
   final int runningThreadCount;
+  final DateTime createdAt;
   final DateTime lastActivityAt;
 }

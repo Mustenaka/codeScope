@@ -7,11 +7,17 @@ import 'file_tree_node.dart';
 class FileBrowserController extends ChangeNotifier {
   FileBrowserController({
     required this.restClient,
-    required this.sessionId,
-  });
+    this.sessionId,
+    this.projectId,
+  }) : assert(
+          (sessionId != null && sessionId != '') ||
+              (projectId != null && projectId != ''),
+          'FileBrowserController requires either sessionId or projectId.',
+        );
 
   final CodeScopeRestClient restClient;
-  final String sessionId;
+  final String? sessionId;
+  final String? projectId;
 
   bool _loading = false;
   String? _errorMessage;
@@ -31,7 +37,9 @@ class FileBrowserController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _tree = await restClient.fetchSessionFileTree(sessionId);
+      _tree = projectId != null
+          ? await restClient.fetchProjectFileTree(projectId!)
+          : await restClient.fetchSessionFileTree(sessionId!);
     } catch (error) {
       _errorMessage = error.toString();
     } finally {
@@ -46,8 +54,9 @@ class FileBrowserController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _selectedContent =
-          await restClient.fetchSessionFileContent(sessionId, path);
+      _selectedContent = projectId != null
+          ? await restClient.fetchProjectFileContent(projectId!, path)
+          : await restClient.fetchSessionFileContent(sessionId!, path);
     } catch (error) {
       _errorMessage = error.toString();
       _selectedContent = null;

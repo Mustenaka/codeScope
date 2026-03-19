@@ -24,6 +24,7 @@ class ThreadMessageRecord {
     required this.createdAt,
     required this.sequence,
     this.sourceType,
+    this.agentKind,
   });
 
   final String id;
@@ -33,4 +34,20 @@ class ThreadMessageRecord {
   final DateTime createdAt;
   final int sequence;
   final String? sourceType;
+  final String? agentKind;
+
+  String get sourceLabel {
+    final normalized = agentKind?.trim().toLowerCase();
+    switch (normalized) {
+      case 'codex':
+        return 'Codex';
+      case 'claude':
+        return 'Claude';
+      case '':
+      case null:
+        return 'Agent';
+      default:
+        return agentKind!;
+    }
+  }
 }

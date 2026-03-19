@@ -113,8 +113,11 @@ func (s *Service) ListTree(sessionID string) ([]Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load session %s: %w", sessionID, err)
 	}
+	return s.ListTreeByWorkspace(record.WorkspaceRoot)
+}
 
-	root, err := filepath.Abs(record.WorkspaceRoot)
+func (s *Service) ListTreeByWorkspace(workspaceRoot string) ([]Node, error) {
+	root, err := filepath.Abs(workspaceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace root: %w", err)
 	}
@@ -144,8 +147,11 @@ func (s *Service) ReadContent(sessionID, requestedPath string) (Content, error) 
 	if err != nil {
 		return Content{}, fmt.Errorf("load session %s: %w", sessionID, err)
 	}
+	return s.ReadContentByWorkspace(record.WorkspaceRoot, requestedPath)
+}
 
-	resolvedPath, relativePath, err := resolveWorkspacePath(record.WorkspaceRoot, requestedPath)
+func (s *Service) ReadContentByWorkspace(workspaceRoot, requestedPath string) (Content, error) {
+	resolvedPath, relativePath, err := resolveWorkspacePath(workspaceRoot, requestedPath)
 	if err != nil {
 		return Content{}, err
 	}

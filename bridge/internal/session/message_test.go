@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestNewEventMessageIncludesSessionMetadata(t *testing.T) {
+func TestNewEventMessageSkipsThreadStateForObservedDebugTerminalOutput(t *testing.T) {
 	now := time.Date(2026, 3, 17, 10, 0, 0, 0, time.UTC)
 	meta := Metadata{
 		AgentName:     "codex",
@@ -16,8 +16,10 @@ func TestNewEventMessageIncludesSessionMetadata(t *testing.T) {
 	}
 
 	msg := NewEventMessage(meta, EventTypeTerminalOutput, map[string]any{
-		"content": "go test ./...",
-		"stream":  "stdout",
+		"content":       "[bridge] observing codex session",
+		"stream":        "stdout",
+		"observed":      true,
+		"semantic_kind": "debug_event",
 	}, now)
 
 	if msg.SessionID != "session-1" {
@@ -53,8 +55,8 @@ func TestNewEventMessageIncludesSessionMetadata(t *testing.T) {
 	if msg.Payload["source_session_id"] != "session-1" {
 		t.Fatalf("expected payload to include source_session_id=session-1, got %#v", msg.Payload["source_session_id"])
 	}
-	if msg.Payload["thread_state"] != ThreadStateRunning {
-		t.Fatalf("expected terminal output to default to running thread_state, got %#v", msg.Payload["thread_state"])
+	if _, ok := msg.Payload["thread_state"]; ok {
+		t.Fatalf("expected debug terminal output to avoid release thread_state, got %#v", msg.Payload["thread_state"])
 	}
 }
 
@@ -72,8 +74,8 @@ func TestNewHeartbeatMessageIncludesProjectAndThreadMetadata(t *testing.T) {
 	if msg.Payload["thread_id"] != "session-2" {
 		t.Fatalf("expected thread_id=session-2, got %#v", msg.Payload["thread_id"])
 	}
-	if msg.Payload["thread_state"] != ThreadStateRunning {
-		t.Fatalf("expected heartbeat thread_state running, got %#v", msg.Payload["thread_state"])
+	if _, ok := msg.Payload["thread_state"]; ok {
+		t.Fatalf("expected heartbeat to avoid release thread_state, got %#v", msg.Payload["thread_state"])
 	}
 	if msg.Payload["project_name"] != "codeScope" {
 		t.Fatalf("expected project_name codeScope, got %#v", msg.Payload["project_name"])

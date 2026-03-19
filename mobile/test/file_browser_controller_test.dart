@@ -14,7 +14,7 @@ void main() {
   test('loads file tree and file preview from rest client', () async {
     final controller = FileBrowserController(
       restClient: _FakeRestClient(),
-      sessionId: 'session-001',
+      projectId: 'project-001',
     );
 
     await controller.load();
@@ -43,12 +43,27 @@ class _FakeRestClient implements CodeScopeRestClient {
   }
 
   @override
+  Future<ThreadRecord> createProjectThread(String projectId, String content) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<ThreadRecord> fetchThreadDetail(String threadId) {
     throw UnimplementedError();
   }
 
   @override
   Future<List<ThreadMessageRecord>> fetchThreadMessages(String threadId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<List<PromptCommandTask>> fetchThreadCommands(String threadId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<PromptCommandTask> sendThreadPrompt(String threadId, String content) {
     throw UnimplementedError();
   }
 
@@ -69,6 +84,11 @@ class _FakeRestClient implements CodeScopeRestClient {
 
   @override
   Future<List<FileTreeNode>> fetchSessionFileTree(String sessionId) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<List<FileTreeNode>> fetchProjectFileTree(String projectId) async {
     return const <FileTreeNode>[
       FileTreeNode(
         name: 'lib',
@@ -90,6 +110,14 @@ class _FakeRestClient implements CodeScopeRestClient {
   @override
   Future<FileContentRecord> fetchSessionFileContent(
     String sessionId,
+    String path,
+  ) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<FileContentRecord> fetchProjectFileContent(
+    String projectId,
     String path,
   ) async {
     return const FileContentRecord(

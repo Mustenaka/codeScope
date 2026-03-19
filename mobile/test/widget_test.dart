@@ -16,6 +16,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.settings_rounded), findsOneWidget);
+    expect(find.text('Workspaces'), findsWidgets);
     expect(find.text('codeScope'), findsOneWidget);
     expect(find.text('agent-bridge'), findsOneWidget);
   });

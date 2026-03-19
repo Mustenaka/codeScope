@@ -18,7 +18,7 @@ void main() {
       () async {
     final socketEvents = StreamController<LogEvent>();
     final controller = PromptController(
-      sessionId: 'session-001',
+      threadId: 'thread-001',
       restClient: _FakePromptRestClient(),
       webSocketClient: _FakePromptWebSocketClient(socketEvents.stream),
     );
@@ -60,7 +60,7 @@ void main() {
   test('sends prompt and prepends created task', () async {
     final restClient = _FakePromptRestClient();
     final controller = PromptController(
-      sessionId: 'session-001',
+      threadId: 'thread-001',
       restClient: restClient,
       webSocketClient:
           _FakePromptWebSocketClient(const Stream<LogEvent>.empty()),
@@ -96,12 +96,51 @@ class _FakePromptRestClient implements CodeScopeRestClient {
   }
 
   @override
-  Future<ThreadRecord> fetchThreadDetail(String threadId) {
+  Future<ThreadRecord> createProjectThread(String projectId, String content) {
     throw UnimplementedError();
   }
 
   @override
+  Future<ThreadRecord> fetchThreadDetail(String threadId) {
+    return Future<ThreadRecord>.value(
+      ThreadRecord(
+        id: 'thread-001',
+        projectId: 'project-001',
+        sessionId: 'session-001',
+        title: 'Release thread',
+        status: ThreadStatus.running,
+        summary: 'continue from last step',
+        lastActivityAt: DateTime.parse('2026-03-18T09:01:00Z'),
+        startedAt: DateTime.parse('2026-03-18T09:00:00Z'),
+      ),
+    );
+  }
+
+  @override
   Future<List<ThreadMessageRecord>> fetchThreadMessages(String threadId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<List<PromptCommandTask>> fetchThreadCommands(String threadId) async {
+    return fetchSessionCommands('session-001');
+  }
+
+  @override
+  Future<PromptCommandTask> sendThreadPrompt(String threadId, String content) {
+    return sendPrompt('session-001', content);
+  }
+
+  @override
+  Future<List<FileTreeNode>> fetchProjectFileTree(String projectId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<FileContentRecord> fetchProjectFileContent(
+    String projectId,
+    String path,
+  ) {
     throw UnimplementedError();
   }
 

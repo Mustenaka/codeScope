@@ -14,9 +14,20 @@ abstract class CodeScopeRestClient {
 
   Future<List<ThreadRecord>> fetchProjectThreads(String projectId);
 
+  Future<ThreadRecord> createProjectThread(String projectId, String content);
+
   Future<ThreadRecord> fetchThreadDetail(String threadId);
 
   Future<List<ThreadMessageRecord>> fetchThreadMessages(String threadId);
+
+  Future<List<PromptCommandTask>> fetchThreadCommands(String threadId);
+
+  Future<PromptCommandTask> sendThreadPrompt(String threadId, String content);
+
+  Future<List<FileTreeNode>> fetchProjectFileTree(String projectId);
+
+  Future<FileContentRecord> fetchProjectFileContent(
+      String projectId, String path);
 
   Future<List<SessionRecord>> fetchSessions();
 
@@ -61,6 +72,13 @@ class UnimplementedCodeScopeRestClient implements CodeScopeRestClient {
   }
 
   @override
+  Future<ThreadRecord> createProjectThread(String projectId, String content) {
+    throw UnimplementedError(
+      'Connect createProjectThread to POST $baseUrl/projects/$projectId/threads.',
+    );
+  }
+
+  @override
   Future<ThreadRecord> fetchThreadDetail(String threadId) {
     throw UnimplementedError(
       'Connect fetchThreadDetail to GET $baseUrl/threads/$threadId.',
@@ -71,6 +89,35 @@ class UnimplementedCodeScopeRestClient implements CodeScopeRestClient {
   Future<List<ThreadMessageRecord>> fetchThreadMessages(String threadId) {
     throw UnimplementedError(
       'Connect fetchThreadMessages to GET $baseUrl/threads/$threadId/messages.',
+    );
+  }
+
+  @override
+  Future<List<PromptCommandTask>> fetchThreadCommands(String threadId) {
+    throw UnimplementedError(
+      'Connect fetchThreadCommands to GET $baseUrl/threads/$threadId/commands.',
+    );
+  }
+
+  @override
+  Future<PromptCommandTask> sendThreadPrompt(String threadId, String content) {
+    throw UnimplementedError(
+      'Connect sendThreadPrompt to POST $baseUrl/threads/$threadId/commands/prompt.',
+    );
+  }
+
+  @override
+  Future<List<FileTreeNode>> fetchProjectFileTree(String projectId) {
+    throw UnimplementedError(
+      'Connect fetchProjectFileTree to GET $baseUrl/projects/$projectId/files/tree.',
+    );
+  }
+
+  @override
+  Future<FileContentRecord> fetchProjectFileContent(
+      String projectId, String path) {
+    throw UnimplementedError(
+      'Connect fetchProjectFileContent to GET $baseUrl/projects/$projectId/files/content?path=$path.',
     );
   }
 

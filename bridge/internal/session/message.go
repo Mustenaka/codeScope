@@ -31,6 +31,8 @@ const (
 	ThreadStateWaitingReview = "waiting_review"
 	ThreadStateCompleted     = "completed"
 	ThreadStateBlocked       = "blocked"
+	ThreadStateOffline       = "offline"
+	ThreadStateStale         = "stale"
 )
 
 const (
@@ -142,7 +144,9 @@ func enrichSemanticPayload(payload map[string]any, meta Metadata, eventType, ove
 	payload["agent_name"] = meta.AgentName
 	payload["workspace_root"] = meta.WorkspaceRoot
 	payload["machine_id"] = meta.MachineID
-	payload["project_id"] = projectID
+	if _, ok := payload["project_id"]; !ok || strings.TrimSpace(asString(payload["project_id"])) == "" {
+		payload["project_id"] = projectID
+	}
 	if _, ok := payload["project_name"]; !ok || strings.TrimSpace(asString(payload["project_name"])) == "" {
 		payload["project_name"] = projectName
 	}
@@ -166,11 +170,21 @@ func defaultThreadStateForEvent(eventType string, payload map[string]any) string
 	switch eventType {
 	case EventTypeError:
 		return ThreadStateBlocked
-	case EventTypeHeartbeat, EventTypeTerminalOutput, EventTypeAIOutput, EventTypeCommand:
+	case EventTypeAIOutput, EventTypeCommand:
 		return ThreadStateRunning
+	case EventTypeTerminalOutput:
+		if observed, ok := payload["observed"].(bool); ok && observed {
+			return ""
+		}
+		if semanticKind, _ := payload["semantic_kind"].(string); strings.TrimSpace(semanticKind) == "debug_event" {
+			return ""
+		}
+		return ThreadStateRunning
+	case EventTypeHeartbeat:
+		return ""
 	default:
 		if observed, ok := payload["observed"].(bool); ok && observed {
-			return ThreadStateRunning
+			return ""
 		}
 		return ""
 	}

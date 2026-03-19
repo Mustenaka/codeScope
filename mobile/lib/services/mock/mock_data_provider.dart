@@ -62,6 +62,7 @@ class MockDataProvider {
         machineId: 'mbp-mumte',
         threadCount: 2,
         runningThreadCount: 1,
+        createdAt: _startedAt.subtract(const Duration(hours: 5)),
         lastActivityAt: _startedAt.subtract(const Duration(seconds: 5)),
       ),
       ProjectRecord(
@@ -71,6 +72,7 @@ class MockDataProvider {
         machineId: 'linux-builder',
         threadCount: 1,
         runningThreadCount: 0,
+        createdAt: _startedAt.subtract(const Duration(days: 3)),
         lastActivityAt: _startedAt.subtract(const Duration(days: 1)),
       ),
     ];
@@ -125,6 +127,23 @@ class MockDataProvider {
     }
   }
 
+  ThreadRecord createProjectThread(String projectId, String content) {
+    final project = buildProjectDetail(projectId);
+    final threads = buildThreads(projectId);
+    final now = DateTime.now().toUtc();
+    return ThreadRecord(
+      id: 'thread-created-${_random.nextInt(999999)}',
+      projectId: projectId,
+      sessionId: threads.isNotEmpty ? threads.first.sessionId : 'session-created',
+      title: content.length <= 72 ? content : '${content.substring(0, 72).trim()}...',
+      agentKind: threads.isNotEmpty ? threads.first.agentKind : 'codex',
+      status: ThreadStatus.running,
+      summary: content,
+      lastActivityAt: now,
+      startedAt: now,
+    );
+  }
+
   ThreadRecord buildThreadDetail(String threadId) {
     return <ThreadRecord>[
       ...buildThreads('project-001'),
@@ -144,6 +163,7 @@ class MockDataProvider {
             createdAt: _startedAt.subtract(const Duration(minutes: 17)),
             sequence: 1,
             sourceType: 'command',
+            agentKind: 'codex',
           ),
           ThreadMessageRecord(
             id: 'message-002',
@@ -153,6 +173,7 @@ class MockDataProvider {
             createdAt: _startedAt.subtract(const Duration(seconds: 5)),
             sequence: 2,
             sourceType: 'ai_output',
+            agentKind: 'codex',
           ),
         ];
       default:

@@ -23,7 +23,11 @@ type CommandResultRecorder interface {
 }
 
 type PromptCommandInput struct {
-	Content string `json:"content" binding:"required"`
+	Content         string `json:"content" binding:"required"`
+	ProjectID       string `json:"project_id,omitempty"`
+	ThreadID        string `json:"thread_id,omitempty"`
+	ThreadTitle     string `json:"thread_title,omitempty"`
+	SourceSessionID string `json:"source_session_id,omitempty"`
 }
 
 type CommandService struct {
@@ -62,9 +66,7 @@ func (s *CommandService) CreatePrompt(sessionID string, input PromptCommandInput
 		ID:        s.idGen(),
 		SessionID: sessionID,
 		TaskType:  BridgeCommandTypeSendPrompt,
-		Payload: map[string]any{
-			"content": input.Content,
-		},
+		Payload:   promptPayload(input),
 		Status:    CommandTaskPending,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -80,9 +82,7 @@ func (s *CommandService) CreatePrompt(sessionID string, input PromptCommandInput
 		CommandID:   task.ID,
 		CommandType: BridgeCommandTypeSendPrompt,
 		Timestamp:   now.Format(time.RFC3339Nano),
-		Payload: map[string]any{
-			"content": input.Content,
-		},
+		Payload:     promptPayload(input),
 	}
 
 	if err := s.bridges.Send(sessionID, message); err != nil {
@@ -101,6 +101,25 @@ func (s *CommandService) CreatePrompt(sessionID string, input PromptCommandInput
 	}
 	log.Printf("command dispatched: session_id=%s command_id=%s command_type=%s", sessionID, task.ID, BridgeCommandTypeSendPrompt)
 	return task, nil
+}
+
+func promptPayload(input PromptCommandInput) map[string]any {
+	payload := map[string]any{
+		"content": input.Content,
+	}
+	if input.ProjectID != "" {
+		payload["project_id"] = input.ProjectID
+	}
+	if input.ThreadID != "" {
+		payload["thread_id"] = input.ThreadID
+	}
+	if input.ThreadTitle != "" {
+		payload["thread_title"] = input.ThreadTitle
+	}
+	if input.SourceSessionID != "" {
+		payload["source_session_id"] = input.SourceSessionID
+	}
+	return payload
 }
 
 func (s *CommandService) ListBySession(sessionID string) ([]CommandTask, error) {

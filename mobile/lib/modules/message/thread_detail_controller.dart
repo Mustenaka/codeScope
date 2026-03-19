@@ -24,15 +24,28 @@ class ThreadDetailController extends ChangeNotifier {
   ThreadRecord? get thread => _thread;
   List<ThreadMessageRecord> get messages => _messages;
 
-  Future<void> load(String threadId) async {
+  Future<void> load(String threadId, {ThreadRecord? initialThread}) async {
+    _thread ??= initialThread;
     _loading = true;
     _errorMessage = null;
     notifyListeners();
     await _subscription?.cancel();
 
     try {
-      _thread = await _restClient.fetchThreadDetail(threadId);
-      _messages = await _restClient.fetchThreadMessages(threadId);
+      try {
+        _thread = await _restClient.fetchThreadDetail(threadId);
+      } catch (error) {
+        if (_thread == null) {
+          rethrow;
+        }
+      }
+      try {
+        _messages = await _restClient.fetchThreadMessages(threadId);
+      } catch (error) {
+        if (_thread == null) {
+          rethrow;
+        }
+      }
       _subscription = _webSocketClient.subscribeToThread(threadId).listen(
         _appendMessage,
         onError: (Object error) {

@@ -130,3 +130,41 @@ func TestHandleSendPromptFailsClearlyWhenInjectionIsUnsupported(t *testing.T) {
 		t.Fatalf("expected side-channel failure message, got %#v", result.Payload["error"])
 	}
 }
+
+func TestHandleSendPromptPreservesSemanticThreadMetadata(t *testing.T) {
+	meta := session.Metadata{
+		AgentName:     "bridge",
+		WorkspaceRoot: "D:/repo",
+		MachineID:     "machine-1",
+		SessionID:     "session-42",
+	}
+
+	handler := NewHandler(meta, nil, NewUnsupportedPromptSink("side-channel mode does not support prompt injection"))
+	command := session.Message{
+		MessageID:   "msg-1",
+		SessionID:   "session-42",
+		MessageType: session.MessageTypeCommand,
+		CommandID:   "cmd-42",
+		CommandType: session.CommandTypeSendPrompt,
+		Timestamp:   "2026-03-17T10:00:00Z",
+		Payload: map[string]any{
+			"content":           "continue",
+			"project_id":        "project-001",
+			"thread_id":         "thread-001",
+			"thread_title":      "formal thread",
+			"source_session_id": "session-42",
+		},
+	}
+
+	recorder := &publisherRecorder{}
+	if err := handler.Handle(context.Background(), command, recorder); err != nil {
+		t.Fatalf("handle command: %v", err)
+	}
+
+	if got := recorder.messages[0].Payload["thread_id"]; got != "thread-001" {
+		t.Fatalf("expected command event thread_id to round-trip, got %#v", got)
+	}
+	if got := recorder.messages[1].Payload["project_id"]; got != "project-001" {
+		t.Fatalf("expected command result project_id to round-trip, got %#v", got)
+	}
+}

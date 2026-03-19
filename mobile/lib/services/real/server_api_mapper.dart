@@ -34,6 +34,7 @@ class ServerApiMapper {
       machineId: _readString(json, 'machine_id'),
       threadCount: _readInt(json, 'thread_count'),
       runningThreadCount: _readInt(json, 'running_thread_count'),
+      createdAt: _readDateTime(json, 'created_at'),
       lastActivityAt: _readDateTime(json, 'last_activity_at'),
     );
   }
@@ -62,6 +63,7 @@ class ServerApiMapper {
       createdAt: _readDateTime(json, 'created_at'),
       sequence: _readInt(json, 'sequence'),
       sourceType: _readNullableString(json, 'source_type'),
+      agentKind: _readNullableString(json, 'agent_kind'),
     );
   }
 
@@ -89,6 +91,8 @@ class ServerApiMapper {
         createdAt: _readDateTime(json, 'created_at', fallbackKey: 'timestamp'),
         sequence: 0,
         sourceType: 'command',
+        agentKind: _readNullableString(payload, 'agent_kind') ??
+            _readNullableString(payload, 'agent_name'),
       );
     }
 
@@ -107,6 +111,8 @@ class ServerApiMapper {
         createdAt: _readDateTime(json, 'created_at', fallbackKey: 'timestamp'),
         sequence: 0,
         sourceType: eventType,
+        agentKind: _readNullableString(payload, 'agent_kind') ??
+            _readNullableString(payload, 'agent_name'),
       );
     }
 
@@ -123,6 +129,8 @@ class ServerApiMapper {
         createdAt: _readDateTime(json, 'created_at', fallbackKey: 'timestamp'),
         sequence: 0,
         sourceType: eventType,
+        agentKind: _readNullableString(payload, 'agent_kind') ??
+            _readNullableString(payload, 'agent_name'),
       );
     }
 
@@ -319,6 +327,10 @@ class ServerApiMapper {
         return ThreadStatus.completed;
       case 'blocked':
         return ThreadStatus.blocked;
+      case 'offline':
+        return ThreadStatus.offline;
+      case 'stale':
+        return ThreadStatus.stale;
     }
     throw FormatException('Unsupported thread status "$value".');
   }

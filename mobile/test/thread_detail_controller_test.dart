@@ -91,6 +91,21 @@ class _FakeRestClient implements CodeScopeRestClient {
   }
 
   @override
+  Future<ThreadRecord> createProjectThread(String projectId, String content) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<List<PromptCommandTask>> fetchThreadCommands(String threadId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<PromptCommandTask> sendThreadPrompt(String threadId, String content) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<List<SessionRecord>> fetchSessions() {
     throw UnimplementedError();
   }
@@ -121,8 +136,21 @@ class _FakeRestClient implements CodeScopeRestClient {
   }
 
   @override
+  Future<List<FileTreeNode>> fetchProjectFileTree(String projectId) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<FileContentRecord> fetchSessionFileContent(
     String sessionId,
+    String path,
+  ) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<FileContentRecord> fetchProjectFileContent(
+    String projectId,
     String path,
   ) {
     throw UnimplementedError();
