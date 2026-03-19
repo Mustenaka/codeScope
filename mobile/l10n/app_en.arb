@@ -1,0 +1,83 @@
+{
+  "@@locale": "en",
+  "appTitle": "codeScope Mobile",
+  "sessionsTitle": "codeScope Sessions",
+  "settingsTitle": "Settings",
+  "settingsTooltip": "Settings",
+  "remoteSessionsHeadline": "Remote AI coding sessions",
+  "sessionsReady": "{count} sessions ready",
+  "@sessionsReady": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mockTransportSuffix": "mock transport enabled",
+  "retry": "Retry",
+  "files": "Files",
+  "prompt": "Prompt",
+  "sessionDetailsTitle": "Session details",
+  "fileBrowserPlaceholderTitle": "File browser placeholder",
+  "fileBrowserPlaceholderBody": "Reserved for GET /api/sessions/:id/files/tree and file content APIs.",
+  "promptPlaceholderTitle": "Prompt dispatch placeholder",
+  "promptPlaceholderBody": "Reserved for GET /api/prompts and POST /api/sessions/:id/commands/prompt.",
+  "currentSessionLabel": "Current session: {sessionId}",
+  "@currentSessionLabel": {
+    "placeholders": {
+      "sessionId": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSectionGeneral": "General",
+  "settingsSectionConnection": "Connection",
+  "languageLabel": "Language",
+  "languageChinese": "Chinese",
+  "languageEnglish": "English",
+  "dataSourceLabel": "Data source",
+  "dataSourceMock": "Mock",
+  "dataSourceServer": "Server",
+  "apiBaseUrlLabel": "REST API Base URL",
+  "webSocketUrlLabel": "WebSocket URL",
+  "settingsHintRuntimeOnly": "Changes apply to the current run only.",
+  "settingsTestConnection": "Test connection",
+  "settingsTestingConnection": "Testing connection...",
+  "settingsConnectionSuccess": "Connection successful",
+  "settingsConnectionMockOnly": "Mock mode does not require a server connection test.",
+  "settingsConnectionFailure": "Connection failed: {message}",
+  "@settingsConnectionFailure": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "saveSettings": "Save settings",
+  "settingsSaved": "Settings applied",
+  "machineLabel": "Machine",
+  "workspaceLabel": "Workspace",
+  "statusLabel": "Status",
+  "createdStatus": "Created",
+  "runningStatus": "Running",
+  "stoppedStatus": "Stopped",
+  "failedStatus": "Failed",
+  "logTypeAi": "AI",
+  "logTypeTerminal": "Terminal",
+  "logTypeCommand": "Command",
+  "logTypeFile": "File",
+  "logTypeDiff": "Diff",
+  "logTypeError": "Error",
+  "logTypeHeartbeat": "Heartbeat",
+  "loadingErrorPrefix": "Load failed: {message}",
+  "@loadingErrorPrefix": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSectionAbout": "About",
+  "appVersionLabel": "Version",
+  "appBuildLabel": "Build"
+}

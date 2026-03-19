@@ -1,0 +1,35 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.iml
+
+# Go
+bin/
+coverage.out
+*.test
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+.metadata
+
+# Environment
+.env
+.env.*
+
+# Android / Gradle local files
+.gradle/
+local.properties
+key.properties
+
+# Local planning / scratch files
+docs/superpowers/
+ceshi.txt
+*.log
