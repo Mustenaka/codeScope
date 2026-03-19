@@ -105,6 +105,20 @@ cd mobile
 flutter run
 ```
 
+### 截图
+
+![e4d9ef818f9645193e64c6330c33ff80](\pic\e4d9ef818f9645193e64c6330c33ff80.jpg)
+
+![1ee45df453efa89354df6a74d28d8fd9](\pic\1ee45df453efa89354df6a74d28d8fd9.jpg)
+
+![6f47c8831d12c8f0efe35a95f09d38f2](\pic\6f47c8831d12c8f0efe35a95f09d38f2.jpg)
+
+![53bfb44f1b882d10a09b762dae63923f](\pic\53bfb44f1b882d10a09b762dae63923f.jpg)
+
+![a7ad9c2fb6e3ea7be198cfc7c3ca097e](\pic\a7ad9c2fb6e3ea7be198cfc7c3ca097e.jpg)
+
+![d3ebc99456a9bc9f27c51128eec47b03](\pic\d3ebc99456a9bc9f27c51128eec47b03.jpg)
+
 ### 常用接口检查
 
 ```powershell
